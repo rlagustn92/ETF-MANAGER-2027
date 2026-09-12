@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<style>
+  :root {
+    --ink: 15, 42, 68;
+    --ink-1: rgba(15,42,68,0.92);
+    --ink-2: rgba(15,42,68,0.66);
+    --ink-3: rgba(15,42,68,0.48);
+    --line: rgba(15,42,68,0.14);
+    --line-focus: rgba(49,130,246,0.85);
+    --card: #ffffff;
+  }
+  * { box-sizing: border-box; }
+  /* overflow:hidden 이유는 football_pitch 쪽 주석 참고 (휠 이벤트 가로채기 방지) */
+  html, body { margin: 0; padding: 0; background: transparent; overflow: hidden;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans KR",
+    "Malgun Gothic", "Apple SD Gothic Neo", Roboto, sans-serif; }
+  #wrap { display: flex; flex-direction: column; gap: 10px; padding: 1px; }
+
+  .card {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 10px 12px 11px;
+  }
+  .card .label {
+    font-size: 13.5px; font-weight: 600; color: var(--ink-2);
+    margin-bottom: 7px;
+  }
+
+  /* 세 블록을 은은한 색으로 구분 (사용자 요청). 파랑은 국내 증권사에서 "매도" 색이라
+     피했습니다. 금액 = 빨강, 현재가격 = 황토(정보 표시라 제일 차분하게), 수량 = 초록.
+     테두리만 색을 주고 배경은 3~5% 만 깔아서 튀지 않게 했습니다. */
+  .card.amount { border-color: rgba(240,68,82,0.50); background: rgba(240,68,82,0.035); }
+  .card.amount .label { color: #cf3742; }
+  .card.amount .field { border-color: rgba(240,68,82,0.38); }
+  .card.amount .field:focus-within { border-color: #f04452; }
+
+  .card.qty { border-color: rgba(22,131,80,0.48); background: rgba(22,131,80,0.035); }
+  .card.qty .label { color: #167d4e; }
+  .card.qty .field { border-color: rgba(22,131,80,0.36); }
+  .card.qty .field:focus-within { border-color: #168350; }
+
+  /* 입력칸: 단위(원/주)가 칸 "안"에 붙어 있어 통화를 헷갈리지 않게 (사용자 요청) */
+  .field {
+    display: flex; align-items: center; gap: 6px;
+    border: 1.5px solid var(--line); border-radius: 9px;
+    padding: 8px 11px; background: #fff;
+    transition: border-color .12s ease;
+  }
+  .field:focus-within { border-color: var(--line-focus); }
+  .field input {
+    flex: 1 1 auto; min-width: 0; width: 100%;
+    border: 0; outline: 0; background: transparent; padding: 0;
+    font-size: 16px; font-weight: 700; color: var(--ink-1);
+    font-variant-numeric: tabular-nums; text-align: right;
+    font-family: inherit;
+  }
+  .field input::placeholder { font-weight: 500; color: var(--ink-3); }
+  .field .unit {
+    flex: 0 0 auto; font-size: 14px; font-weight: 600; color: var(--ink-2);
+  }
+
+  .hint {
+    margin-top: 8px; font-size: 13.5px; line-height: 1.45;
+    font-weight: 600; color: var(--ink-1);
+  }
+  .hint.muted { font-weight: 500; color: var(--ink-3); }
+  .hint.warn { font-weight: 600; color: #b23b3b; }
+
+  /* 두 카드 사이의 현재가 줄 -- 얼마짜리인지 찾으러 다니지 않도록 (사용자 요청).
+     라벨과 숫자가 멀리 떨어져 보이지 않도록 가운데로 모아서 한 덩어리로 묶습니다. */
+  #priceRow {
+    display: flex; align-items: baseline; justify-content: center;
+    flex-wrap: wrap; gap: 4px 8px;
+    border: 1px solid rgba(176,116,20,0.45); border-radius: 10px;
+    background: rgba(176,116,20,0.05);
+    padding: 7px 11px;
+  }
+  #priceRow .k { font-size: 13px; font-weight: 600; color: #96650f; }
+  #priceRow .v {
+    font-size: 14.5px; font-weight: 700; color: var(--ink-1);
+    font-variant-numeric: tabular-nums;
+  }
+</style>
+</head>
+<body>
+<div id="wrap">
+  <div class="card amount">
+    <div class="label">얼마어치 살까? (금액으로 설정)</div>
+    <div class="field">
+      <input id="amt" type="text" inputmode="numeric" autocomplete="off" placeholder="0" />
+      <span class="unit">원</span>
+    </div>
+    <div class="hint" id="amtHint"></div>
+  </div>
+
+  <div id="priceRow">
+    <span class="k">현재가격</span>
+    <span class="v" id="priceVal">–</span>
+  </div>
+
+  <div class="card qty">
+    <div class="label">몇 주 살까? (수량으로 설정)</div>
+    <div class="field">
+      <input id="qty" type="text" inputmode="decimal" autocomplete="off" placeholder="0" />
+      <span class="unit">주</span>
+    </div>
+    <div class="hint" id="qtyHint"></div>
+  </div>
+</div>
+
+<script>
+function _send(type, data) {
+  window.parent.postMessage(Object.assign({ isStreamlitMessage: true, type: type }, data), "*");
+}
+const Streamlit = {
+  RENDER_EVENT: "streamlit:render",
+  ready: () => _send("streamlit:componentReady", { apiVersion: 1 }),
+  setFrameHeight: (h) => _send("streamlit:setFrameHeight", { height: h }),
+  setComponentValue: (v) => _send("streamlit:setComponentValue", { value: v, dataType: "json" }),
+  onRender: (cb) => window.addEventListener("message", (e) => {
+    if (e.data && e.data.type === Streamlit.RENDER_EVENT) cb(e.data.args || {});
+  }),
+};
+
+const amtEl = document.getElementById("amt");
+const qtyEl = document.getElementById("qty");
+const amtHintEl = document.getElementById("amtHint");
+const qtyHintEl = document.getElementById("qtyHint");
+
+// Python 에서 내려주는 값들
+let cfg = {
+  price_krw: null, price_native: null, currency: "KRW",
+  fx_rate: null, fractional: false, price_warning: "",
+};
+let nonce = 0;
+let sentAmt = null, sentQty = null;   // 마지막으로 서버에 보낸 값 (서버 보정 판별용)
+let pushTimer = null;
+
+function reportHeight() {
+  Streamlit.setFrameHeight(document.getElementById("wrap").scrollHeight + 4);
+}
+
+function fmtInt(n) { return Math.round(n).toLocaleString("en-US"); }
+function fmtKrw(n) { return "₩" + fmtInt(n); }
+function fmtNative(n, cur, digits) {
+  const d = (cur === "KRW") ? 0 : (digits === undefined ? 2 : digits);
+  return n.toLocaleString("en-US", { minimumFractionDigits: d, maximumFractionDigits: d });
+}
+function fmtQty(n) {
+  return cfg.fractional
+    ? n.toLocaleString("en-US", { minimumFractionDigits: 4, maximumFractionDigits: 4 })
+    : fmtInt(n);
+}
+
+/** 입력칸의 숫자만 뽑아낸다. 금액은 정수, 수량은 소수점 허용(소수점 매수 ON 일 때). */
+function parseAmt(s) {
+  const digits = String(s || "").replace(/[^\d]/g, "");
+  return digits ? parseInt(digits, 10) : 0;
+}
+function parseQty(s) {
+  const cleaned = String(s || "").replace(/[^\d.]/g, "");
+  const v = parseFloat(cleaned);
+  if (!isFinite(v) || v < 0) return 0;
+  return cfg.fractional ? v : Math.floor(v);
+}
+
+/** 금액 칸: 타이핑 중에도 세자리 콤마를 유지하면서 커서가 튀지 않게 한다. */
+function reformatAmountKeepingCaret() {
+  const before = amtEl.value;
+  const caretFromEnd = before.length - (amtEl.selectionStart || 0);
+  const v = parseAmt(before);
+  const after = v ? fmtInt(v) : "";
+  if (after !== before) {
+    amtEl.value = after;
+    const pos = Math.max(0, after.length - caretFromEnd);
+    amtEl.setSelectionRange(pos, pos);
+  }
+  return v;
+}
+
+/** 미리보기는 서버를 거치지 않고 여기서 바로 계산 -- 그래서 엔터 없이 즉시 갱신됩니다. */
+function renderAmountHint(amount) {
+  if (!cfg.price_krw) {
+    amtHintEl.className = "hint warn";
+    amtHintEl.textContent = "⚠ " + (cfg.price_warning || "현재가를 불러오지 못했습니다.");
+    return;
+  }
+  if (!amount) {
+    amtHintEl.className = "hint muted";
+    amtHintEl.textContent = "금액을 적으면 몇 주 살 수 있는지 바로 알려드려요.";
+    return;
+  }
+  amtHintEl.className = "hint";
+  if (cfg.fractional) {
+    const shares = amount / cfg.price_krw;
+    amtHintEl.textContent = `= ${fmtQty(shares)}주 · 소수점까지 사서 ${fmtKrw(amount)} 전부 사용`;
+  } else {
+    const shares = Math.floor(amount / cfg.price_krw);
+    const spent = shares * cfg.price_krw;
+    amtHintEl.textContent =
+      `= ${fmtInt(shares)}주 · 실제 ${fmtKrw(spent)} (${fmtKrw(amount - spent)} 남음, 1주 미만은 못 사서)`;
+  }
+}
+
+/** 현재가 줄: 원화 종목은 "₩4,040", 달러 종목은 "₩958,945 / 716.02 USD". */
+function renderPrice() {
+  const el = document.getElementById("priceVal");
+  if (cfg.price_native === null || cfg.price_native === undefined) {
+    el.textContent = "–";
+    return;
+  }
+  if (cfg.currency === "KRW") {
+    el.textContent = fmtKrw(cfg.price_native);
+  } else {
+    const krw = cfg.price_krw ? fmtKrw(cfg.price_krw) + " / " : "";
+    el.textContent = krw + fmtNative(cfg.price_native, cfg.currency) + " " + cfg.currency;
+  }
+}
+
+function renderQtyHint(qty) {
+  if (cfg.price_native === null || cfg.price_native === undefined) {
+    qtyHintEl.className = "hint warn";
+    qtyHintEl.textContent = "⚠ " + (cfg.price_warning || "현재가를 불러오지 못했습니다.");
+    return;
+  }
+  if (!qty) {
+    qtyHintEl.className = "hint muted";
+    qtyHintEl.textContent = "주식 수를 적으면 얼마가 드는지 바로 알려드려요.";
+    return;
+  }
+  qtyHintEl.className = "hint";
+  const totalNative = qty * cfg.price_native;
+  const head = `= ${fmtNative(totalNative, cfg.currency)} ${cfg.currency}`;
+  if (cfg.price_krw) {
+    const fxTxt = (cfg.currency !== "KRW" && cfg.fx_rate)
+      ? `, USD/KRW ${fmtNative(cfg.fx_rate, "USD")}` : "";
+    qtyHintEl.textContent =
+      `${head} ≈ ${fmtKrw(qty * cfg.price_krw)} `
+      + `(현재가 ${fmtNative(cfg.price_native, cfg.currency)} ${cfg.currency} 기준${fxTxt})`;
+  } else {
+    qtyHintEl.textContent = `${head} (환율 정보가 없어 원화 환산 불가)`;
+  }
+}
+
+/** 서버(Python)로 값 전달. 타이핑마다 보내면 과하므로 잠깐 멈췄을 때 보냅니다. */
+function pushToPython(source, immediate) {
+  const payload = {
+    source: source,
+    amount: parseAmt(amtEl.value),
+    qty: parseQty(qtyEl.value),
+    nonce: ++nonce,
+  };
+  clearTimeout(pushTimer);
+  // sentAmt/sentQty 는 "실제로 보낸" 순간에만 갱신합니다. 예약만 하고 취소된 값까지
+  // 기록하면, 서버가 아직 모르는 값과 비교하게 되어 타이핑 중에 칸이 덮어써집니다.
+  const send = () => {
+    sentAmt = payload.amount;
+    sentQty = payload.qty;
+    Streamlit.setComponentValue(payload);
+  };
+  if (immediate) send(); else pushTimer = setTimeout(send, 450);
+}
+
+amtEl.addEventListener("input", () => {
+  const v = reformatAmountKeepingCaret();
+  renderAmountHint(v);          // 화면은 즉시 갱신 (서버 왕복 없음)
+  reportHeight();
+  pushToPython("amount", false);
+});
+qtyEl.addEventListener("input", () => {
+  renderQtyHint(parseQty(qtyEl.value));
+  reportHeight();
+  pushToPython("qty", false);
+});
+for (const [el, src] of [[amtEl, "amount"], [qtyEl, "qty"]]) {
+  el.addEventListener("blur", () => pushToPython(src, true));
+  el.addEventListener("keydown", (e) => { if (e.key === "Enter") pushToPython(src, true); });
+}
+
+Streamlit.onRender((args) => {
+  cfg = {
+    price_krw: (args.price_krw === undefined) ? null : args.price_krw,
+    price_native: (args.price_native === undefined) ? null : args.price_native,
+    currency: args.currency || "KRW",
+    fx_rate: args.fx_rate || null,
+    fractional: !!args.fractional,
+    price_warning: args.price_warning || "",
+  };
+
+  // 서버가 값을 보정했을 때(예: 시드 한도 초과로 잘림)만 입력칸을 덮어씁니다.
+  // 그래야 사용자가 타이핑하는 도중에 글자가 튀지 않습니다.
+  const srvAmt = Number(args.amount || 0);
+  if (document.activeElement !== amtEl || (sentAmt !== null && srvAmt !== sentAmt)) {
+    amtEl.value = srvAmt ? fmtInt(srvAmt) : "";
+    sentAmt = srvAmt;
+  }
+  const srvQty = Number(args.qty || 0);
+  if (document.activeElement !== qtyEl || (sentQty !== null && srvQty !== sentQty)) {
+    qtyEl.value = srvQty ? fmtQty(srvQty) : "";
+    sentQty = srvQty;
+  }
+
+  renderPrice();
+  renderAmountHint(parseAmt(amtEl.value));
+  renderQtyHint(parseQty(qtyEl.value));
+  reportHeight();
+});
+
+Streamlit.ready();
+window.addEventListener("resize", reportHeight);
+</script>
+</body>
+</html>

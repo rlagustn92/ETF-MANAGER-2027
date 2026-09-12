@@ -1,0 +1,10 @@
+# ETF MANAGER -- 실행 시점(2026-09)에 설치·검증된 버전
+# 상한(<)은 호환성 안전용. 필요 시 조정하세요.
+streamlit>=1.63,<2
+pandas>=2.2,<4
+numpy>=1.26,<3
+yfinance>=1.6,<2
+finance-datareader>=0.9.202,<1
+
+# 개발/테스트용
+pytest>=8,<10

@@ -1,0 +1,17 @@
+__pycache__/
+*.pyc
+.venv/
+venv/
+.cache/
+.pytest_cache/
+.streamlit/secrets.toml
+.DS_Store
+
+# 개인 실행용 파일 (내 PC 경로와 계정 이름이 들어있어 공개 저장소에 올리지 않음)
+고고싱.bat
+실행CMD.txt
+
+# 내가 저장한 전술 파일 (보유 종목/금액이 그대로 담김).
+# tactics/sample_*.json 은 예시라서 올립니다.
+tactics/*.json
+!tactics/sample_*.json

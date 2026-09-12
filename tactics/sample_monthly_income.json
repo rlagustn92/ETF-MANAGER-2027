@@ -1,0 +1,15 @@
+{
+  "app_year": 2027,
+  "schema_version": 1,
+  "name": "월배당 공격형 예시",
+  "initial_capital_krw": 100000000,
+  "fractional_shares": false,
+  "positions": [
+    { "market": "US", "ticker": "QQQ",  "target_weight": 0.20, "x": 0.78, "y": 0.28, "default_position_group": "ATTACK",   "distribution_enabled": true },
+    { "market": "US", "ticker": "SCHD", "target_weight": 0.20, "x": 0.55, "y": 0.40, "default_position_group": "MIDFIELD", "distribution_enabled": true },
+    { "market": "US", "ticker": "JEPQ", "target_weight": 0.20, "x": 0.60, "y": 0.62, "default_position_group": "MIDFIELD", "distribution_enabled": true },
+    { "market": "US", "ticker": "TLT",  "target_weight": 0.15, "x": 0.30, "y": 0.45, "default_position_group": "DEFENSE",  "distribution_enabled": true },
+    { "market": "US", "ticker": "SGOV", "target_weight": 0.10, "x": 0.10, "y": 0.50, "default_position_group": "GOALKEEPER", "distribution_enabled": true },
+    { "market": "KR", "ticker": "005930", "display_name": "삼성전자", "currency": "KRW", "target_weight": 0.05, "x": 0.40, "y": 0.75, "default_position_group": "DEFENSE", "distribution_enabled": true }
+  ]
+}
