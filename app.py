@@ -49,6 +49,7 @@ from services import (
     fx_service,
     portfolio_service,
     tactic_service,
+    visitor_service,
 )
 from services.portfolio_service import resolve_price
 import ui_theme
@@ -190,11 +191,28 @@ def _add_security(hit: search_provider.SearchHit) -> bool:
 # =====================================================================
 # 헤더
 # =====================================================================
-st.markdown(
-    f"<h2 class='app-title'>{config.app_name_with_icon()}"
-    f"<span class='app-version'>{config.app_version_label()}</span></h2>",
-    unsafe_allow_html=True,
-)
+tc1, tc2 = st.columns([3, 1])
+with tc1:
+    st.markdown(
+        f"<h2 class='app-title'>{config.app_name_with_icon()}"
+        f"<span class='app-version'>{config.app_version_label()}</span></h2>",
+        unsafe_allow_html=True,
+    )
+with tc2:
+    # 방문자 수: 접속(세션) 1회당 1 만 올립니다. 화면이 다시 그려질 때마다 올리면
+    # 숫자가 엉터리가 되므로, 이번 세션에 이미 셌는지를 session_state 로 확인합니다.
+    if "visitor_counts" not in st.session_state:
+        st.session_state["visitor_counts"] = visitor_service.count_visit()
+    _counts = st.session_state["visitor_counts"]
+    if _counts:
+        _today, _total = _counts
+        st.markdown(
+            "<div class='visitors'>"
+            f"<span><b>TODAY</b> {_today:,}</span>"
+            f"<span><b>TOTAL</b> {_total:,}</span>"
+            "</div>",
+            unsafe_allow_html=True,
+        )
 hc1, hc2, hc3 = st.columns([2, 1, 1])
 with hc1:
     P.name = st.text_input("전술명", value=P.name, placeholder="전술명")

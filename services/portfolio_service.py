@@ -228,6 +228,6 @@ def compute(portfolio: Portfolio) -> PortfolioComputation:
         usdkrw_as_of=fx.as_of,
         usdkrw_message=usdkrw_msg,
         data_as_of=max(price_dates) if price_dates else None,
-        last_updated=datetime.now(),
+        last_updated=config.now_local(),   # 화면에 KST 로 표시되므로 한국 시간 기준
         warnings=warnings,
     )

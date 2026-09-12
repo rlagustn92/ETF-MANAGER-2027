@@ -143,6 +143,18 @@ def inject() -> None:
         }}
         .ext-link:hover {{ background: rgba(15, 42, 68, 0.10); }}
 
+        /* 오른쪽 위 방문자 수 (TODAY / TOTAL) */
+        .visitors {{
+          display: flex; justify-content: flex-end; gap: 14px;
+          padding-top: 12px;
+          font-size: 12.5px; color: var(--ink-tertiary);
+          font-variant-numeric: tabular-nums; white-space: nowrap;
+        }}
+        .visitors b {{
+          font-size: 11px; font-weight: 700; letter-spacing: .04em;
+          color: var(--ink-tertiary); margin-right: 3px;
+        }}
+
         /* 제목 옆 버전 표시 (config.APP_VERSION) */
         h2.app-title {{ margin: 0 0 .4rem; }}
         .app-version {{

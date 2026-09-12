@@ -17,6 +17,8 @@ app.py, HTML <title>, 저장 파일명, README 표기 등은 모두 아래 값�
 
 from __future__ import annotations
 
+from datetime import date, datetime, timedelta, timezone
+
 # =====================================================================
 # 1. 프로그램 명칭 (연도 변경은 여기 한 줄)
 # =====================================================================
@@ -24,7 +26,7 @@ APP_YEAR: int = 2027
 
 # 프로그램 버전. 크든 작든 무언가 바꿀 때마다 맨 뒷자리를 1 올립니다
 # (1.0.0 -> 1.0.1 -> 1.0.2 ...). 화면 맨 위 제목 옆에 표시됩니다.
-APP_VERSION: str = "1.0.7"
+APP_VERSION: str = "1.0.8"
 
 
 def app_name() -> str:
@@ -123,6 +125,15 @@ CACHE_TTL_SEARCH_SECONDS: int = 60 * 60 * 24     # 종목 검색 목록: 24시�
 
 CACHE_DIR_NAME: str = ".cache"
 
+# ---- 방문자 카운터 -------------------------------------------------------
+# 배포 서버(Streamlit Cloud)는 앱이 잠들거나 재배포되면 파일이 초기화됩니다.
+# 그래서 숫자를 서버에 적어두면 계속 0 으로 돌아가므로, 외부 카운터에 맡깁니다.
+# 무료 서비스라 언제든 멈출 수 있으니 실패해도 앱은 그대로 동작해야 합니다.
+COUNTER_ENABLED: bool = True
+COUNTER_BASE_URL: str = "https://abacus.jasoncameron.dev"
+COUNTER_NAMESPACE_DEFAULT: str = "etfmanager2027"
+COUNTER_TIMEOUT_SECONDS: float = 2.5      # 느려도 화면을 오래 붙잡지 않도록 짧게
+
 # 환율 티커/심볼 (USD -> KRW)
 FX_PAIR_USDKRW: str = "USDKRW=X"     # yfinance 심볼. provider 구현 시 실행 검증.
 
@@ -154,6 +165,25 @@ PITCH_ASPECT_RATIO: float = 1.06
 # =====================================================================
 # 8. 표시 / 포맷
 # =====================================================================
+# ---- 시간대 -------------------------------------------------------------
+# 화면에 "KST" 라고 적으므로 반드시 한국 시간으로 계산해야 합니다.
+# datetime.now() 를 그냥 쓰면 "서버의 시간"이 나오는데, 배포 서버(Streamlit Cloud)는
+# UTC 라서 9시간 어긋난 시각을 KST 라고 표시하게 됩니다. (실제로 있었던 버그)
+# 한국은 서머타임이 없어서 고정 +9 로 충분하고, tzdata 설치 여부와 무관해 배포에 안전합니다.
+KST = timezone(timedelta(hours=9))
+TIMEZONE_LABEL: str = "KST"
+
+
+def now_local() -> datetime:
+    """화면 표시용 '지금' (한국 시간)."""
+    return datetime.now(KST)
+
+
+def today_local() -> date:
+    """화면 표시용 '오늘' (한국 날짜)."""
+    return now_local().date()
+
+
 DATA_AS_OF_LABEL: str = "데이터 기준일"
 LAST_UPDATED_LABEL: str = "마지막 업데이트"
 NO_DATA_TEXT: str = "데이터 없음"
