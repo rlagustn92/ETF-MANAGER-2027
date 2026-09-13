@@ -214,9 +214,17 @@ with col_right:      # Phase B: 계산 결과 표시 (지표, 경고)      ← c
 10. **미리보기 서버를 재시작하면 열려 있던 브라우저 탭은 죽습니다**
     클릭해도 아무 반응이 없으면 버그가 아니라 연결이 끊긴 것 — 새로고침(F5)하면 됩니다.
 
-11. **이미 import된 모듈은 Streamlit이 핫리로드하지 않음**
-    `components/`, `services/` 등을 고쳤으면 **서버를 재시작**해야 반영됩니다.
+11. **이미 import된 모듈은 Streamlit이 핫리로드하지 않음** ⚠️ 배포에서도 터집니다
+    `components/`, `services/`, `config.py` 등을 고쳤으면 **서버를 재시작**해야 반영됩니다.
     (`app.py` 자체는 저장하면 자동 반영)
+
+    **이건 로컬만의 문제가 아닙니다.** 배포 후 실제로 앱이 죽었습니다:
+    `app.py` 는 새 코드인데 `config.py`/`services/*` 는 메모리에 남은 옛 코드가 쓰여서
+    `AttributeError: comp.income_yield_on_invested_pct` 가 났고, 화면 버전은 v1.0.8,
+    오류 난 줄은 v1.0.9 였습니다(뒤죽박죽 상태).
+
+    → **푸시한 뒤 Streamlit Cloud 에서 `Manage app` → `Reboot app` 을 누르세요.**
+    특히 **dataclass 에 필드를 추가**했을 때 100% 재발합니다. DEPLOY.md 참고.
 
 ---
 
