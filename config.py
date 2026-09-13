@@ -26,7 +26,7 @@ APP_YEAR: int = 2027
 
 # 프로그램 버전. 크든 작든 무언가 바꿀 때마다 맨 뒷자리를 1 올립니다
 # (1.0.0 -> 1.0.1 -> 1.0.2 ...). 화면 맨 위 제목 옆에 표시됩니다.
-APP_VERSION: str = "1.0.11"
+APP_VERSION: str = "1.0.12"
 
 
 def app_name() -> str:
@@ -44,7 +44,7 @@ def app_version_label() -> str:
 
 # 제목 옆 "개발자 피드백/버그제보" 링크가 열 주소. 바꾸려면 여기 한 줄만 고치면 됩니다.
 FEEDBACK_URL: str = "https://diycarebox.tistory.com/44"
-FEEDBACK_LABEL: str = "개발자 피드백/버그제보"
+FEEDBACK_LABEL: str = "개발자 피드백/버그제보/비회원댓글가능"
 
 
 # 편의 상수 (임포트 시점 계산). 연도 변경은 프로세스 재시작으로 반영됩니다.
