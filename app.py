@@ -111,6 +111,15 @@ def native_amt(x, currency: str, usd_digits: int = 2) -> str:
     return f"{x:,.{usd_digits}f}"
 
 
+def note(html_text: str) -> None:
+    """그냥 지나치면 숫자를 오해하게 되는 설명 (ui_theme 의 .note).
+
+    일반 캡션보다 눈에 띄게 표시합니다. <b> 강조만 쓰고, 넣는 값은 앱이 만든
+    숫자 문자열이어야 합니다 (외부에서 온 문자열을 그대로 넣지 마세요).
+    """
+    st.markdown(f"<div class='note'>{html_text}</div>", unsafe_allow_html=True)
+
+
 def is_admin() -> bool:
     """관리자(= 앱 주인)인지. 캐시 비우기 같은 '전체에 영향 주는' 기능을 가립니다.
 
@@ -784,10 +793,11 @@ with st.expander("📈 예전부터 해봤다면? (그냥 사서 계속 갖기)"
             if abs(_bt_on_invested - r.return_pct) >= 0.01:
                 _cash_ratio = (r.cash_balance_krw / r.initial_capital_krw * 100.0
                                if r.initial_capital_krw > 0 else 0.0)
-                st.caption(
-                    f"※ 초기 투자금 중 {won(r.total_invested_krw)} 만 종목에 들어갔습니다 "
-                    f"(현금 {_cash_ratio:.1f}% 남음). "
-                    f"남은 현금까지 포함한 **전체 기준 수익률은 {r.return_pct:+.2f}%** 입니다."
+                note(
+                    f"초기 투자금 중 <b>{won(r.total_invested_krw)}</b> 만 종목에 들어갔습니다 "
+                    f"(현금 <b>{_cash_ratio:.1f}%</b> 남음). "
+                    f"남은 현금까지 포함하면 전체 기준 수익률은 "
+                    f"<b>{r.return_pct:+.2f}%</b> 입니다."
                 )
             h1, h2, h3 = st.columns(3)
             h1.write(f"입력일: {r.input_start}")

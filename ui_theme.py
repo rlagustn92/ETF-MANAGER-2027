@@ -143,6 +143,21 @@ def inject() -> None:
         }}
         .ext-link:hover {{ background: rgba(15, 42, 68, 0.10); }}
 
+        /* 그냥 지나치면 숫자를 오해하게 되는 설명. 일반 캡션(연한 회색)으로 쓰면
+           눈에 안 들어와서, 옅은 황토 배경 + 왼쪽 굵은 선으로 시선을 잡아둡니다. */
+        .note {{
+          font-size: 15px;
+          line-height: 1.6;
+          font-weight: 500;
+          color: var(--ink-primary);
+          background: rgba(176, 116, 20, 0.07);
+          border-left: 3px solid rgba(176, 116, 20, 0.6);
+          border-radius: 8px;
+          padding: 11px 14px;
+          margin: 8px 0 4px;
+        }}
+        .note b {{ font-weight: 700; }}
+
         /* 오른쪽 위 방문자 수 (TODAY / TOTAL) */
         .visitors {{
           display: flex; justify-content: flex-end; gap: 14px;
