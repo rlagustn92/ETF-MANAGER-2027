@@ -73,7 +73,8 @@ def test_summary_strip_shows_all_six_numbers_in_one_box(market):
 
     strip = [m.value for m in at.markdown if m.value.startswith("<div class='stat-strip'>")]
     assert len(strip) == 1, "요약 박스는 화면에 하나만 있어야 합니다."
-    for label in ("내 시드", "총 원금", "잔여현금", "월 분배금", "연 분배금", "예상 수익"):
+    # 마지막 칸은 '투자금 대비' (시드가 아니라 실제 투자금 기준 -- 라벨과 분모가 일치해야 함)
+    for label in ("내 시드", "총 원금", "잔여현금", "월 분배금", "연 분배금", "투자금 대비"):
         assert f"<div class='k'>{label}</div>" in strip[0], label
 
     # 값도 실제 계산 결과와 같아야 한다 (시드 1천만, 30주+20주 x 100,000 = 500만 투자)

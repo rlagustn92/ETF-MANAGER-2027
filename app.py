@@ -499,7 +499,9 @@ with summary_bar_slot:
         ("잔여현금", won(comp.cash_balance_krw), comp.cash_balance_krw < 0),
         ("월 분배금", won(comp.monthly_distribution_krw), False),
         ("연 분배금", won(comp.annual_distribution_krw), False),
-        ("예상 수익", pct(comp.income_yield_pct), False),
+        # 분모를 '실제 투자금'으로 씁니다. 시드를 다 담지 않았을 때 시드 기준으로 보여주면
+        # "분배율 15% 짜리를 담았는데 왜 0.7% 라고 나오지?" 하는 오해가 생깁니다.
+        ("투자금 대비", pct(comp.income_yield_on_invested_pct), False),
     ])
 
 # ---- 중: 전술판 (세로, FM 풍 포지션 슬롯) -----------------------------
@@ -668,7 +670,20 @@ s3.metric("잔여현금", won(comp.cash_balance_krw))
 s4, s5, s6 = st.columns(3)
 s4.metric("한 달에 받을 분배금", won(comp.monthly_distribution_krw))
 s5.metric("연 예상 분배금", won(comp.annual_distribution_krw))
-s6.metric("투자금 대비 예상 수익", pct(comp.income_yield_pct))
+# 두 수익률을 나란히 보여줍니다. 시드를 다 담지 않으면 둘이 크게 벌어지는데,
+# 하나만 보여주면 "분배율 15% 짜리를 담았는데 왜 0.7%?" 하는 오해가 생깁니다.
+s6.metric("투자금 대비 예상 수익", pct(comp.income_yield_on_invested_pct),
+          help="실제로 종목에 들어간 돈 기준입니다. 담은 종목들의 평균 분배율에 해당하며, "
+               "현금을 얼마나 남겨뒀는지와 무관합니다.")
+s7, s8, _s9 = st.columns(3)
+s7.metric("시드 대비 예상 수익", pct(comp.income_yield_pct),
+          help="남겨둔 현금까지 포함한 내 시드 전체 기준입니다. 시드의 일부만 담으면 "
+               "낮게 나오는 것이 정상이며, 현금을 놀리고 있다는 뜻입니다.")
+if comp.cash_balance_krw > 0 and comp.initial_capital_krw > 0:
+    _cash_pct = comp.cash_balance_krw / comp.initial_capital_krw * 100
+    if _cash_pct >= 5:
+        s8.metric("현금 비중", pct(_cash_pct),
+                  help="시드 중 아직 종목에 넣지 않은 비율입니다.")
 st.caption(config.DISTRIBUTION_DISCLAIMER)
 
 cA, cB, cC = st.columns(3)
@@ -757,8 +772,23 @@ with st.expander("📈 예전부터 해봤다면? (그냥 사서 계속 갖기)"
             g1, g2, g3 = st.columns(3)
             g1.metric("초기 투자금", won(r.initial_capital_krw))
             g2.metric("최종 평가금액", won(r.final_value_krw))
-            g3.metric("수익률", f"{r.return_pct:+.2f}%",
-                      delta=won(r.profit_krw))
+            # 시드의 일부만 담았으면 "전체 기준 수익률"은 현금에 희석돼 아주 작게 나옵니다.
+            # (예: 1억 중 450만원만 담아 종목이 +21% 여도 전체로는 +1%)
+            # 그래서 실제로 넣은 돈 기준 수익률을 같이 보여줍니다.
+            _bt_on_invested = (r.profit_krw / r.total_invested_krw * 100.0
+                               if r.total_invested_krw > 0 else 0.0)
+            g3.metric("수익률 (투자금 기준)", f"{_bt_on_invested:+.2f}%",
+                      delta=won(r.profit_krw),
+                      help="실제로 종목에 들어간 돈 기준입니다. 아래 '전체 기준'은 "
+                           "남겨둔 현금까지 포함한 값이라 더 낮게 나옵니다.")
+            if abs(_bt_on_invested - r.return_pct) >= 0.01:
+                _cash_ratio = (r.cash_balance_krw / r.initial_capital_krw * 100.0
+                               if r.initial_capital_krw > 0 else 0.0)
+                st.caption(
+                    f"※ 초기 투자금 중 {won(r.total_invested_krw)} 만 종목에 들어갔습니다 "
+                    f"(현금 {_cash_ratio:.1f}% 남음). "
+                    f"남은 현금까지 포함한 **전체 기준 수익률은 {r.return_pct:+.2f}%** 입니다."
+                )
             h1, h2, h3 = st.columns(3)
             h1.write(f"입력일: {r.input_start}")
             h2.write(f"실제 매수 기준일: {r.actual_buy_date}")

@@ -70,7 +70,8 @@ class PortfolioComputation:
     cash_balance_krw: float
     monthly_distribution_krw: float
     annual_distribution_krw: float
-    income_yield_pct: float
+    income_yield_pct: float                 # 시드 대비 (현금 포함)
+    income_yield_on_invested_pct: float      # 투자금 대비 (실제 담은 돈 기준)
     weight_total: float
     weight_is_over: bool
     weight_message: str | None
@@ -204,6 +205,7 @@ def compute(portfolio: Portfolio) -> PortfolioComputation:
     monthly = sum(r.monthly_distribution_krw for r in rows)
     annual = sum(r.annual_distribution_krw for r in rows)
     income_yield = calc.calculate_income_yield(annual, capital)
+    income_yield_invested = calc.calculate_income_yield_on_invested(annual, total_invest)
 
     wc = calc.check_total_weight([r.target_weight for r in rows], config.WEIGHT_SUM_EPSILON)
 
@@ -220,6 +222,7 @@ def compute(portfolio: Portfolio) -> PortfolioComputation:
         monthly_distribution_krw=monthly,
         annual_distribution_krw=annual,
         income_yield_pct=income_yield,
+        income_yield_on_invested_pct=income_yield_invested,
         weight_total=wc.total,
         weight_is_over=wc.is_over,
         weight_message=wc.message,

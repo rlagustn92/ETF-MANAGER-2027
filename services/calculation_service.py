@@ -142,10 +142,32 @@ def calculate_monthly_distribution(shares: float, ttm_per_share: float) -> float
 
 
 def calculate_income_yield(annual_distribution: float, initial_capital: float) -> float:
-    """예상 현금수익률(%) = 연 예상 분배금 / 초기자본 x 100. (인수인계서 42)"""
+    """시드 대비 현금수익률(%) = 연 예상 분배금 / 내 시드 x 100. (인수인계서 42)
+
+    현금으로 남겨둔 몫까지 분모에 포함합니다. "내 전체 자산이 실제로 얼마를
+    만들어내는가" 를 보는 값이라, 시드의 일부만 담으면 낮게 나오는 것이 정상입니다.
+    """
     if initial_capital <= 0:
         return 0.0
     return annual_distribution / initial_capital * 100.0
+
+
+def calculate_income_yield_on_invested(annual_distribution: float,
+                                       actual_investment: float) -> float:
+    """투자금 대비 현금수익률(%) = 연 예상 분배금 / 실제 투자금 x 100.
+
+    시드가 아니라 "실제로 종목에 들어간 돈" 이 분모입니다. 담은 종목들의 평균
+    분배율에 해당하며, 현금을 얼마나 남겨뒀는지와 무관합니다.
+
+    왜 두 개가 따로 필요한가
+    ------------------------
+    시드 1억 중 450만원만 담으면 두 값이 크게 벌어집니다(예: 시드 대비 0.69% /
+    투자금 대비 15.35%). 하나만 보여주면서 라벨을 반대로 붙이면 "분배율 15% 짜리를
+    담았는데 왜 0.69% 라고 나오지?" 하는 오해가 생깁니다. (실제로 있었던 혼동)
+    """
+    if actual_investment <= 0:
+        return 0.0
+    return annual_distribution / actual_investment * 100.0
 
 
 def calculate_distribution_yield(ttm_per_share: float | None,
