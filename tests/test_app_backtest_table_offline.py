@@ -9,6 +9,7 @@ from __future__ import annotations
 import pathlib
 from datetime import date
 
+import pytest
 from streamlit.testing.v1 import AppTest
 
 from models.portfolio import Portfolio
@@ -99,6 +100,43 @@ def test_valuation_fx_matches_the_rate_used_for_the_valuation(market):
     assert df[df["종목"] == "B"].iloc[0]["지금 환율"] == f"{row.final_fx:,.2f}"
     # 평가금액 = 수량 x 종료가 x 지금 환율
     assert row.final_value_krw == row.shares * row.final_price_native * row.final_fx
+
+
+def test_backtest_shows_return_on_invested_money_not_diluted_by_cash(market):
+    """시드의 일부만 담으면 '전체 기준' 수익률은 현금에 희석됩니다.
+    화면에 크게 보이는 값은 '투자금 기준'(= 손익 / 실제 투자금) 이어야 합니다.
+    (제보 사례: 종목은 +21% 인데 화면엔 +0.97% 로 보였음)"""
+    at = _run_backtest_in_app(market)
+    r = at.session_state["bt_result"]
+
+    on_invested = r.profit_krw / r.total_invested_krw * 100.0
+    metrics = {m.label: m.value for m in at.metric}
+    assert metrics["수익률 (투자금 기준)"] == f"{on_invested:+.2f}%"
+
+    # 관계식: 전체 기준 = 투자금 기준 x (투자금 / 초기투자금)
+    ratio = r.total_invested_krw / r.initial_capital_krw
+    assert r.return_pct == pytest.approx(on_invested * ratio, abs=1e-6)
+
+
+def test_backtest_warns_when_most_of_the_money_stayed_in_cash(market):
+    """대부분이 현금으로 남았으면 그 사실을 눈에 띄게 알려줘야 합니다."""
+    market.set_fx(rate=1_000.0)
+    market.set_kr({"A": {"currency": "KRW",
+                         "history": series([("2021-01-04", 50_000.0),
+                                            ("2026-09-10", 100_000.0)])}})
+    p = Portfolio(name="bt", initial_capital_krw=100_000_000)
+    p.add(Security(market="KR", ticker="A", currency="KRW", target_weight=0.05))
+
+    at = AppTest.from_file(APP_PATH, default_timeout=90)
+    at.session_state["portfolio"] = p
+    at.run()
+    [d for d in at.date_input if d.label == "시작일"][0].set_value(date(2021, 1, 4)).run()
+    [b for b in at.button if b.label == "실행하기"][0].click().run()
+    assert not at.exception
+
+    notes = [m.value for m in at.markdown if m.value.startswith("<div class='note'>")]
+    assert notes, "현금이 많이 남았으면 안내가 떠야 합니다."
+    assert "현금" in notes[0] and "전체 기준" in notes[0]
 
 
 def test_principal_is_in_krw_even_for_us_securities(market):

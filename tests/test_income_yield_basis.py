@@ -75,6 +75,64 @@ def test_both_yields_match_when_fully_invested(market):
     assert comp.income_yield_pct == pytest.approx(comp.income_yield_on_invested_pct, abs=0.1)
 
 
+def test_invested_yield_is_the_weighted_average_of_each_security(market):
+    """여러 종목이면 '투자금 대비' 는 각 종목 분배율의 투자금 가중평균이어야 한다.
+
+    (실데이터 점검에서도 확인: SCHD 3.07 / JEPQ 11.31 / 리츠 9.80 / 커버드콜 22.65 를
+     섞으면 11.298% 가 나오고, 가중평균과 소수점 이하까지 일치했습니다.)
+    """
+    market.set_fx(rate=1_000.0)
+    market.set_us({"LOW": {"currency": "USD", "latest": 100.0},
+                   "HIGH": {"currency": "USD", "latest": 100.0}})
+    market.set_kr({"000001": {"currency": "KRW", "latest": 100_000.0}})
+
+    p = Portfolio(name="t", initial_capital_krw=100_000_000)
+    # 분배율 2% / 20% / 10% 짜리를 50% / 30% / 20% 로 담는다
+    p.add(Security(market="US", ticker="LOW", currency="USD", target_weight=0.50,
+                   distribution_method="manual", manual_ttm_per_share=2.0))
+    p.add(Security(market="US", ticker="HIGH", currency="USD", target_weight=0.30,
+                   distribution_method="manual", manual_ttm_per_share=20.0))
+    p.add(Security(market="KR", ticker="000001", currency="KRW", target_weight=0.20,
+                   distribution_method="manual", manual_ttm_per_share=10_000.0))
+
+    comp = portfolio_service.compute(p)
+
+    num = sum(r.distribution_yield_pct * r.actual_investment_krw for r in comp.rows)
+    den = sum(r.actual_investment_krw for r in comp.rows)
+    weighted_avg = num / den
+
+    assert comp.income_yield_on_invested_pct == pytest.approx(weighted_avg, abs=0.01)
+    # 손으로: 2*0.5 + 20*0.3 + 10*0.2 = 9.0%
+    assert comp.income_yield_on_invested_pct == pytest.approx(9.0, abs=0.05)
+
+
+def test_invested_yield_is_unchanged_by_how_much_cash_is_left(market):
+    """현금을 얼마나 남기든 '투자금 대비' 는 그대로여야 한다 (희석되면 안 됨)."""
+    market.set_fx(rate=1_000.0)
+    market.set_us({"HIGH": {"currency": "USD", "latest": 25.0}})
+
+    yields = []
+    for weight in (1.0, 0.5, 0.045):
+        p = Portfolio(name="t", initial_capital_krw=100_000_000)
+        p.add(Security(market="US", ticker="HIGH", currency="USD", target_weight=weight,
+                       distribution_method="manual", manual_ttm_per_share=4.0))
+        yields.append(portfolio_service.compute(p).income_yield_on_invested_pct)
+
+    assert yields[0] == pytest.approx(yields[1], abs=0.05)
+    assert yields[0] == pytest.approx(yields[2], abs=0.05)
+    assert yields[0] == pytest.approx(16.0, abs=0.2)
+
+
+def test_seed_yield_equals_invested_yield_times_invested_share(market):
+    """두 값의 관계: 시드 대비 = 투자금 대비 x (투자금 / 시드)."""
+    p = _tdaq_like(market)
+    comp = portfolio_service.compute(p)
+
+    ratio = comp.total_actual_investment_krw / comp.initial_capital_krw
+    assert comp.income_yield_pct == pytest.approx(
+        comp.income_yield_on_invested_pct * ratio, abs=1e-6)
+
+
 def test_screen_shows_the_invested_based_number_for_that_label(market):
     """화면의 '투자금 대비 예상 수익' 은 투자금 기준 값이어야 한다."""
     p = _tdaq_like(market)
