@@ -204,7 +204,9 @@ tc1, tc2 = st.columns([3, 1])
 with tc1:
     st.markdown(
         f"<h2 class='app-title'>{config.app_name_with_icon()}"
-        f"<span class='app-version'>{config.app_version_label()}</span></h2>",
+        f"<span class='app-version'>{config.app_version_label()}</span>"
+        f"<a class='ext-link feedback' target='_blank' rel='noopener noreferrer' "
+        f"href='{config.FEEDBACK_URL}'>{config.FEEDBACK_LABEL} ↗</a></h2>",
         unsafe_allow_html=True,
     )
 with tc2:

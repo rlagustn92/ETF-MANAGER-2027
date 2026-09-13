@@ -143,6 +143,15 @@ def inject() -> None:
         }}
         .ext-link:hover {{ background: rgba(15, 42, 68, 0.10); }}
 
+        /* 제목 옆 피드백 링크: 제목 글자 크기를 따라가지 않도록 크기를 고정하고
+           버전 표시와 같은 높이에 놓습니다. */
+        .ext-link.feedback {{
+          margin-left: 10px;
+          font-size: 12px;
+          vertical-align: middle;
+          white-space: nowrap;
+        }}
+
         /* 그냥 지나치면 숫자를 오해하게 되는 설명. 일반 캡션(연한 회색)으로 쓰면
            눈에 안 들어와서, 옅은 황토 배경 + 왼쪽 굵은 선으로 시선을 잡아둡니다. */
         .note {{
