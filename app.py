@@ -624,7 +624,7 @@ with col_mid:
     # 복사는 전술판 위 "📋 텍스트" 버튼으로 한 번에 되고, 여기서는 **무엇이 복사되는지
     # 눈으로 확인**할 수 있게 접어 둡니다(펼쳐야 보이는 형태 유지 -- 사용자 요청).
     if _comment_text:
-        with st.expander("텍스트"):
+        with st.expander("포트폴리오 텍스트 복사"):
             st.code(_comment_text, language=None)
             st.caption("전술판 위 “📋 텍스트” 를 누르면 이 내용이 그대로 복사됩니다.")
 
