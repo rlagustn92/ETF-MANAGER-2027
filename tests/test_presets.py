@@ -74,6 +74,24 @@ def test_income_presets_use_the_seed_their_name_promises():
     assert presets.INCOME_50_5000.capital_krw == 50_000_000
 
 
+@pytest.mark.parametrize("preset", (presets.INCOME_100_1E, presets.INCOME_50_5000),
+                         ids=lambda p: p.key)
+def test_income_presets_are_split_evenly_between_the_two_markets(preset):
+    """한쪽 나라에 몰면 환율이 움직일 때 통째로 흔들립니다 (사용자 요청: 분산)."""
+    us = sum(i.weight_pct for i in preset.items if i.market == "US")
+    kr = sum(i.weight_pct for i in preset.items if i.market == "KR")
+    assert us == pytest.approx(50.0), f"미국 {us}%"
+    assert kr == pytest.approx(50.0), f"한국 {kr}%"
+
+
+@pytest.mark.parametrize("preset", (presets.INCOME_100_1E, presets.INCOME_50_5000),
+                         ids=lambda p: p.key)
+def test_income_presets_do_not_lean_on_one_holding(preset):
+    """한 종목이 30%를 넘으면 그 종목 하나가 분배금을 떠받치는 구조가 됩니다."""
+    biggest = max(i.weight_pct for i in preset.items)
+    assert biggest <= 25.0, f"최대 비중 {biggest}%"
+
+
 def test_presets_fit_within_default_squad_size():
     """기본 보유 한도(11종목)를 넘으면 예시를 불러올 때 에러가 납니다."""
     import config

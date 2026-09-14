@@ -129,18 +129,34 @@ AGGRESSIVE = Preset(
 # 아래 분배율은 전부 **실적(최근 12개월 실제 지급액)** 이 있는 종목만 골랐습니다.
 # 상장한 지 얼마 안 돼 연환산 추정치가 뜨는 종목은 의도적으로 제외했습니다.
 
+# 종목 고른 기준 (사용자 요청): 대중적이고 거래량이 많은 것, 그리고 **큰 지수를
+# 따라가는 것**. 나스닥100 / S&P500 / 미국배당다우존스 / 국내 리츠처럼 기초자산이
+# 넓은 상품만 썼습니다. 러셀2000(소형주)이나 단일 테마, 분배율이 20%를 넘는
+# 상품은 변동이 커서 뺐습니다.
+#
+# 미국과 한국을 **반씩** 섞었습니다. 한쪽에 몰면 환율이 움직일 때 통째로 흔들립니다.
+#
+# ⚠️ 여기서 알아둘 상충 관계: **변동성이 낮을수록 분배율도 낮습니다.**
+#    실측해 보면 저변동 상품(JEPI·XYLD·SPYI 중심)만으로 짜면 10.75%(월 89만원)까지가
+#    한계였습니다. 월 100만원(12%)을 맞추려면 커버드콜 비중이 높아질 수밖에 없고,
+#    그만큼 가격이 오를 때 덜 먹습니다. 목표 금액이 공짜가 아니라는 뜻입니다.
+
 INCOME_100_1E = Preset(
     key="income100_1e",
     label="월 100만원 · 1억",
     summary=("시드 1억으로 월 100만원을 목표로 한 예시(분배율 약 12%). "
-             "미국 커버드콜 중심이라 환율 영향을 받습니다."),
+             "미국·한국을 반씩 섞고 큰 지수를 따라가는 상품만 담았습니다."),
     capital_krw=100_000_000,
     items=(
-        PresetItem("US", "QQQI", "NEOS Nasdaq-100 High Income ETF", "USD", 25.0),
-        PresetItem("US", "JEPQ", "JPMorgan Nasdaq Equity Premium Income ETF", "USD", 25.0),
-        PresetItem("KR", "441680", "TIGER 미국나스닥100커버드콜(합성)", "KRW", 25.0),
-        PresetItem("US", "SPYI", "NEOS S&P 500 High Income ETF", "USD", 15.0),
+        # 미국 50%
+        PresetItem("US", "JEPQ", "JPMorgan Nasdaq Equity Premium Income ETF", "USD", 15.0),
+        PresetItem("US", "QQQI", "NEOS Nasdaq-100 High Income ETF", "USD", 15.0),
         PresetItem("US", "QYLD", "Global X NASDAQ 100 Covered Call ETF", "USD", 10.0),
+        PresetItem("US", "SPYI", "NEOS S&P 500 High Income ETF", "USD", 10.0),
+        # 한국 50%
+        PresetItem("KR", "441680", "TIGER 미국나스닥100커버드콜(합성)", "KRW", 25.0),
+        PresetItem("KR", "458760", "TIGER 미국배당다우존스타겟커버드콜2호", "KRW", 15.0),
+        PresetItem("KR", "329200", "TIGER 리츠부동산인프라", "KRW", 10.0),
     ),
 )
 
@@ -148,15 +164,17 @@ INCOME_50_5000 = Preset(
     key="income50_5000",
     label="월 50만원 · 5천만원",
     summary=("시드 5천만원으로 월 50만원을 목표로 한 예시(분배율 약 12%). "
-             "국내 상품 중심이라 환율 영향이 적습니다."),
+             "위와 같은 방식이되 원금이 절반이라 종목 수를 줄였습니다."),
     capital_krw=50_000_000,
     items=(
+        # 미국 50%
+        PresetItem("US", "JEPQ", "JPMorgan Nasdaq Equity Premium Income ETF", "USD", 20.0),
+        PresetItem("US", "QQQI", "NEOS Nasdaq-100 High Income ETF", "USD", 20.0),
+        PresetItem("US", "QYLD", "Global X NASDAQ 100 Covered Call ETF", "USD", 10.0),
+        # 한국 50%
         PresetItem("KR", "441680", "TIGER 미국나스닥100커버드콜(합성)", "KRW", 25.0),
-        PresetItem("KR", "472150", "TIGER 배당커버드콜액티브", "KRW", 20.0),
         PresetItem("KR", "458760", "TIGER 미국배당다우존스타겟커버드콜2호", "KRW", 15.0),
-        PresetItem("KR", "329200", "TIGER 리츠부동산인프라", "KRW", 15.0),
-        PresetItem("US", "QYLD", "Global X NASDAQ 100 Covered Call ETF", "USD", 15.0),
-        PresetItem("KR", "161510", "PLUS 고배당주", "KRW", 10.0),
+        PresetItem("KR", "329200", "TIGER 리츠부동산인프라", "KRW", 10.0),
     ),
 )
 
