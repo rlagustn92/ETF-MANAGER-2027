@@ -43,6 +43,7 @@ def football_pitch(
     summary: dict | None = None,
     legend: list[dict] | None = None,
     footer: str = "",
+    capture_filename: str = "",
     key: str | None = None,
 ):
     """세로 전술판 컴포넌트.
@@ -63,6 +64,10 @@ def football_pitch(
         legend:  [{"name": 정식 종목명, "amount": "30% · 1,350만 · 월 5.6만",
                    "color": 유니폼 색, "us": bool}, ...]
         footer:  "⚽ ETF MANAGER 2027 · etfmanager2027.streamlit.app"
+
+    capture_filename 은 💾 저장 버튼이 내려받을 PNG 파일 이름입니다
+    (config.capture_image_filename). 저장 **위치**는 지정할 수 없습니다 --
+    브라우저 보안상 무조건 그 브라우저의 다운로드 폴더로 갑니다.
     """
     return _component_func(
         players=players,
@@ -74,6 +79,7 @@ def football_pitch(
         summary=summary,
         legend=legend or [],
         footer=footer,
+        capture_filename=capture_filename,
         key=key,
         default=None,
     )

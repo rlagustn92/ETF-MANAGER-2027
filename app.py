@@ -598,7 +598,8 @@ with col_mid:
                             selected_id=st.session_state.selected_id, key="pitch", height=760,
                             aspect_ratio=config.PITCH_ASPECT_RATIO,
                             summary=capture_summary, legend=capture_legend,
-                            footer=f"⚽ {config.app_name()} · {config.APP_PUBLIC_URL}")
+                            footer=f"⚽ {config.app_name()} · {config.APP_PUBLIC_URL}",
+                            capture_filename=config.capture_image_filename(P.name))
     if result:
         for sec_id, slot_id in (result.get("assignments") or {}).items():
             sec = P.get(sec_id)

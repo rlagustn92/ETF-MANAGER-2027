@@ -16,14 +16,16 @@
     font-size: 13px; font-weight: 700; letter-spacing: .02em; padding: 3px 0; position: relative; }
   #topbar { color: #b23b3b; }
   #botbar { color: #1f6f3a; }
-  #captureBtn {
-    position: absolute; right: 2px; top: 50%; transform: translateY(-50%);
+  #tools { position: absolute; right: 2px; top: 50%; transform: translateY(-50%);
+    display: flex; gap: 4px; }
+  .tbtn {
     font-size: 11px; font-weight: 500; letter-spacing: 0; color: #666;
     background: rgba(0,0,0,0.04); border: 1px solid rgba(0,0,0,0.12); border-radius: 6px;
-    padding: 2px 7px; cursor: pointer; line-height: 1.5;
+    padding: 2px 7px; cursor: pointer; line-height: 1.5; white-space: nowrap;
   }
-  #captureBtn:hover { background: rgba(0,0,0,0.09); }
-  #captureBtn:active { background: rgba(0,0,0,0.14); }
+  .tbtn:hover { background: rgba(0,0,0,0.09); }
+  .tbtn:active { background: rgba(0,0,0,0.14); }
+  .tbtn:disabled { opacity: .6; cursor: default; }
   #pitch {
     position: relative; width: 100%; margin: 0 auto; border-radius: 12px; overflow: hidden;
     /* 잔디 줄무늬: 화면 전체 크기의 큰 그라디언트 하나를 매번 다시 그리는 대신,
@@ -88,7 +90,12 @@
 <body>
 <div id="wrap">
   <div id="topbar">▲ 공격 방향 (상대 골문)
-    <button id="captureBtn" title="전술판 + 요약을 이미지로 클립보드에 복사">📸 캡처</button>
+    <span id="tools">
+      <button id="captureBtn" class="tbtn"
+        title="전술판 + 요약을 이미지로 클립보드에 복사 (게시판 글쓰기 창에 바로 Ctrl+V)">📸 복사</button>
+      <button id="saveBtn" class="tbtn"
+        title="PNG 파일로 내려받기 (브라우저 다운로드 폴더에 저장됩니다)">💾 저장</button>
+    </span>
   </div>
   <div id="pitch">
     <svg id="svg" viewBox="0 0 1000 1400" preserveAspectRatio="none">
@@ -135,6 +142,7 @@ let slots = [];       // {id,row,col,x,y,label,group}
 let summary = null;   // {cells:[{k,v}], note, key_note}
 let legend = [];      // [{name, amount, color, us}]
 let footer = "";
+let captureFilename = "";   // 💾 저장 시 파일 이름 (파이썬이 전술명·날짜로 만들어 내려줌)
 let selectedId = null;
 let nonce = 0;
 const pitch = document.getElementById("pitch");
@@ -726,9 +734,58 @@ async function captureAndCopy() {
   }
 }
 
+/** 💾 저장 -- PNG 파일로 내려받기.
+ *
+ *  왜 필요한가: 네이버 카페·블로그 댓글처럼 **파일 첨부만 되는 곳**이 많습니다.
+ *  클립보드 복사(📸)는 글쓰기 창에 바로 붙여넣을 수 있는 곳에서만 통합니다.
+ *
+ *  ⚠️ 저장 위치는 고를 수 없습니다. 브라우저 보안상 웹페이지는 "바탕화면에 저장"
+ *  같은 걸 시킬 수 없고, 무조건 그 브라우저의 다운로드 폴더로 갑니다
+ *  (사용자가 브라우저 설정에서 "다운로드 위치를 항상 묻기"를 켜 두었다면 그때만
+ *  창이 뜹니다). 그래서 버튼 이름을 "바탕화면 저장"이라고 달면 안 됩니다.
+ *
+ *  모바일: 안드로이드 크롬은 그대로 내려받습니다. 아주 오래된 iOS 사파리는
+ *  download 속성을 무시하므로, 그 경우에는 새 탭으로 열어 길게 눌러 저장하게 합니다.
+ */
+async function captureAndSave() {
+  const btn = document.getElementById("saveBtn");
+  const original = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = "저장 중…";
+  try {
+    const canvas = await buildPitchCanvas();
+    const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/png"));
+    if (!blob) throw new Error("이미지 생성 실패");
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    if (typeof a.download === "undefined") {
+      window.open(url, "_blank");                 // 구형 iOS: 길게 눌러 저장
+      btn.textContent = "새 탭에 열림";
+    } else {
+      a.href = url;
+      a.download = captureFilename || "etf-manager.png";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      btn.textContent = "✅ 저장됨";
+    }
+    // 곧바로 revoke 하면 다운로드가 시작되기 전에 주소가 사라질 수 있습니다.
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
+  } catch (e) {
+    console.error("저장 실패:", e);
+    btn.textContent = "❌ 실패";
+  } finally {
+    setTimeout(() => { btn.textContent = original; btn.disabled = false; }, 1800);
+  }
+}
+
 document.getElementById("captureBtn").addEventListener("click", (e) => {
   e.stopPropagation();
   captureAndCopy();
+});
+document.getElementById("saveBtn").addEventListener("click", (e) => {
+  e.stopPropagation();
+  captureAndSave();
 });
 
 Streamlit.onRender((args) => {
@@ -755,6 +812,7 @@ Streamlit.onRender((args) => {
   summary = args.summary || null;
   legend = Array.isArray(args.legend) ? args.legend : [];
   footer = args.footer || "";
+  captureFilename = args.capture_filename || "";
 
   // 레이아웃 실험용: 전술판 세로 길이(세로/가로 비율)와 컴팩트 폰트 모드
   const aspect = Number(args.aspect_ratio) || (96 / 72);

@@ -26,7 +26,7 @@ APP_YEAR: int = 2027
 
 # 프로그램 버전. 크든 작든 무언가 바꿀 때마다 맨 뒷자리를 1 올립니다
 # (1.0.0 -> 1.0.1 -> 1.0.2 ...). 화면 맨 위 제목 옆에 표시됩니다.
-APP_VERSION: str = "1.0.16"
+APP_VERSION: str = "1.0.17"
 
 
 def app_name() -> str:
@@ -199,7 +199,21 @@ NO_DATA_TEXT: str = "데이터 없음"
 NEEDS_CHECK_TEXT: str = "확인 필요"
 
 # 저장 파일명 접두사 (예: "ETF_MANAGER_<연도>_월배당공격형.json")
-def tactic_export_filename(tactic_name: str) -> str:
+def _safe_filename_part(tactic_name: str) -> str:
     safe = "".join(c for c in tactic_name.strip() if c not in '<>:"/\\|?*').strip()
-    safe = safe.replace(" ", "_") or "tactic"
-    return f"{app_name().replace(' ', '_')}_{safe}.json"
+    return safe.replace(" ", "_") or "tactic"
+
+
+def tactic_export_filename(tactic_name: str) -> str:
+    return f"{app_name().replace(' ', '_')}_{_safe_filename_part(tactic_name)}.json"
+
+
+def capture_image_filename(tactic_name: str) -> str:
+    """📸 저장 버튼이 내려받는 PNG 파일 이름.
+
+    날짜를 붙이는 이유: 같은 전술을 며칠 뒤에 다시 저장하면 가격·분배금이 달라진
+    다른 그림인데, 이름이 같으면 브라우저가 "(1)" 을 붙여서 어느 게 언제 것인지
+    알 수 없게 됩니다.
+    """
+    return (f"{app_name().replace(' ', '_')}_{_safe_filename_part(tactic_name)}"
+            f"_{today_local():%Y%m%d}.png")
