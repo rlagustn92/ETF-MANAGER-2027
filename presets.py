@@ -58,6 +58,9 @@ class Preset:
     label: str
     summary: str          # 버튼 아래 한 줄 설명
     items: tuple[PresetItem, ...]
+    # 이 예시를 불러올 때 채울 시드. 없으면 기본값(1억).
+    # "월 ○○만원 받기" 예시는 원금이 곧 주제라서 예시마다 다릅니다.
+    capital_krw: int = PRESET_CAPITAL_KRW
 
     def total_weight_pct(self) -> float:
         return sum(i.weight_pct for i in self.items)
@@ -103,7 +106,62 @@ AGGRESSIVE = Preset(
     ),
 )
 
-PRESETS: tuple[Preset, ...] = (STABLE, BALANCED, AGGRESSIVE)
+
+# =====================================================================
+# "월 ○○만원 받기" 예시 2종
+# =====================================================================
+# 한국에서 배당 투자의 목표는 대부분 "월 얼마"로 잡힙니다(사용자 요청).
+# 위의 3종이 **성향**으로 나눈 것이라면, 아래 2종은 **목표 금액**으로 나눈 것입니다.
+#
+# ⚠️ 왜 "5천만원으로 월 100만원" 이 없는가 -- 만들 수 있는데 안 만든 게 아니라,
+#    정직하게 만들 수가 없습니다.
+#      월 100만원 / 5천만원 = 연 1,200만원 = **분배율 24%**
+#    실제로 조회해 보면(2026-09 기준) 실적이 검증된 국내외 상품 중 최고가 22.17%
+#    (TIGER 배당커버드콜액티브)입니다. 한 종목에 5천만원을 전부 넣어도 월 92만원이고,
+#    그마저 단일 종목 집중입니다. 24%를 넘기려면
+#      - YieldMax 계열(YMAX 65%) 처럼 원금을 깎아 분배금을 만드는 상품이거나
+#      - 상장 2~5개월짜리 실적을 연환산한 **추정치** 종목
+#    을 넣어야 합니다. 앱이 그런 구성을 "예시"로 내놓으면 처음 시작하는 사람에게
+#    24% 를 쫓으라고 가르치는 셈이라 넣지 않았습니다.
+#    대신 같은 분배율(12%)에서 원금만 절반인 "월 50만원" 예시를 둡니다.
+#    원금이 절반이면 분배금도 절반이라는 것 자체가 보여줄 가치가 있습니다.
+#
+# 아래 분배율은 전부 **실적(최근 12개월 실제 지급액)** 이 있는 종목만 골랐습니다.
+# 상장한 지 얼마 안 돼 연환산 추정치가 뜨는 종목은 의도적으로 제외했습니다.
+
+INCOME_100_1E = Preset(
+    key="income100_1e",
+    label="월 100만원 · 1억",
+    summary=("시드 1억으로 월 100만원을 목표로 한 예시(분배율 약 12%). "
+             "미국 커버드콜 중심이라 환율 영향을 받습니다."),
+    capital_krw=100_000_000,
+    items=(
+        PresetItem("US", "QQQI", "NEOS Nasdaq-100 High Income ETF", "USD", 25.0),
+        PresetItem("US", "JEPQ", "JPMorgan Nasdaq Equity Premium Income ETF", "USD", 25.0),
+        PresetItem("KR", "441680", "TIGER 미국나스닥100커버드콜(합성)", "KRW", 25.0),
+        PresetItem("US", "SPYI", "NEOS S&P 500 High Income ETF", "USD", 15.0),
+        PresetItem("US", "QYLD", "Global X NASDAQ 100 Covered Call ETF", "USD", 10.0),
+    ),
+)
+
+INCOME_50_5000 = Preset(
+    key="income50_5000",
+    label="월 50만원 · 5천만원",
+    summary=("시드 5천만원으로 월 50만원을 목표로 한 예시(분배율 약 12%). "
+             "국내 상품 중심이라 환율 영향이 적습니다."),
+    capital_krw=50_000_000,
+    items=(
+        PresetItem("KR", "441680", "TIGER 미국나스닥100커버드콜(합성)", "KRW", 25.0),
+        PresetItem("KR", "472150", "TIGER 배당커버드콜액티브", "KRW", 20.0),
+        PresetItem("KR", "458760", "TIGER 미국배당다우존스타겟커버드콜2호", "KRW", 15.0),
+        PresetItem("KR", "329200", "TIGER 리츠부동산인프라", "KRW", 15.0),
+        PresetItem("US", "QYLD", "Global X NASDAQ 100 Covered Call ETF", "USD", 15.0),
+        PresetItem("KR", "161510", "PLUS 고배당주", "KRW", 10.0),
+    ),
+)
+
+PRESETS: tuple[Preset, ...] = (STABLE, BALANCED, AGGRESSIVE,
+                               INCOME_100_1E, INCOME_50_5000)
 
 # 예시 버튼 옆의 "초기화". 종목이 하나도 없는 빈 전술로 되돌립니다 (사용자 요청).
 # 예시 3종과 같은 확인 절차를 타도록 Preset 모양을 그대로 씁니다.
@@ -127,7 +185,7 @@ def build_portfolio(preset: Preset) -> Portfolio:
     items 가 비어 있으면(초기화) 종목 없는 빈 전술이 됩니다.
     """
     p = Portfolio(name=f"{preset.label} 예시" if preset.items else "",
-                  initial_capital_krw=PRESET_CAPITAL_KRW)
+                  initial_capital_krw=preset.capital_krw)
     for item in preset.items:
         p.add(Security(
             market=item.market, ticker=item.ticker, name=item.name,

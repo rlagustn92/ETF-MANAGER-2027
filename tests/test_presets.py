@@ -23,12 +23,14 @@ from models.portfolio import Portfolio
 APP_PATH = str(pathlib.Path(__file__).resolve().parent.parent / "app.py")
 
 
-def test_there_are_three_presets_with_unique_keys():
-    assert len(presets.PRESETS) == 3
+def test_presets_have_unique_keys_and_expected_labels():
+    """앞 3개는 성향별, 뒤 2개는 목표 금액별입니다 (화면에서도 두 줄로 나눠 그립니다)."""
+    assert len(presets.PRESETS) == 5
     keys = [p.key for p in presets.PRESETS]
-    assert len(set(keys)) == 3
+    assert len(set(keys)) == len(keys)
     labels = [p.label for p in presets.PRESETS]
-    assert labels == ["안정배당형", "보통배당형", "공격배당형"]
+    assert labels == ["안정배당형", "보통배당형", "공격배당형",
+                      "월 100만원 · 1억", "월 50만원 · 5천만원"]
 
 
 @pytest.mark.parametrize("preset", presets.PRESETS, ids=lambda p: p.key)
@@ -55,13 +57,21 @@ def test_build_portfolio_fills_capital_weights_and_slots(preset):
     p = presets.build_portfolio(preset)
 
     assert isinstance(p, Portfolio)
-    assert p.initial_capital_krw == presets.PRESET_CAPITAL_KRW == 100_000_000
+    # 시드는 예시마다 다를 수 있습니다("월 50만원 · 5천만원" 은 5천만원).
+    assert p.initial_capital_krw == preset.capital_krw
     assert len(p.securities) == len(preset.items)
     assert sum(s.target_weight for s in p.securities) == pytest.approx(1.0)
     # 전술판에 그리려면 모두 슬롯이 있어야 하고, 슬롯이 겹치면 안 된다
     slots = [s.slot for s in p.securities]
     assert all(slots), slots
     assert len(set(slots)) == len(slots), slots
+
+
+def test_income_presets_use_the_seed_their_name_promises():
+    """이름에 원금이 적혀 있으므로, 불러왔을 때 그 원금으로 채워져야 합니다.
+    안 그러면 "월 50만원 · 5천만원" 을 눌렀는데 시드가 1억으로 뜹니다."""
+    assert presets.INCOME_100_1E.capital_krw == 100_000_000
+    assert presets.INCOME_50_5000.capital_krw == 50_000_000
 
 
 def test_presets_fit_within_default_squad_size():

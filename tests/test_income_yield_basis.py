@@ -134,7 +134,11 @@ def test_seed_yield_equals_invested_yield_times_invested_share(market):
 
 
 def test_screen_shows_the_invested_based_number_for_that_label(market):
-    """화면의 '투자금 대비 예상 수익' 은 투자금 기준 값이어야 한다."""
+    """화면의 '투자금 대비 분배율' 은 투자금 기준 값이어야 한다.
+
+    라벨은 '예상 수익' 이었는데, 가격이 올라서 버는 것까지 포함한다고 오해할 수
+    있어서 '분배율' 로 바꿨습니다(위쪽 요약 바와도 같은 말을 씁니다).
+    """
     p = _tdaq_like(market)
     at = AppTest.from_file(APP_PATH, default_timeout=60)
     at.session_state["portfolio"] = p
@@ -143,10 +147,10 @@ def test_screen_shows_the_invested_based_number_for_that_label(market):
 
     comp = portfolio_service.compute(p)
     metrics = {m.label: m.value for m in at.metric}
-    assert metrics["투자금 대비 예상 수익"] == f"{comp.income_yield_on_invested_pct:.2f}%"
-    assert metrics["시드 대비 예상 수익"] == f"{comp.income_yield_pct:.2f}%"
+    assert metrics["투자금 대비 분배율"] == f"{comp.income_yield_on_invested_pct:.2f}%"
+    assert metrics["시드 대비 분배율"] == f"{comp.income_yield_pct:.2f}%"
     # 둘이 눈에 띄게 달라야 이 테스트가 의미 있다
-    assert metrics["투자금 대비 예상 수익"] != metrics["시드 대비 예상 수익"]
+    assert metrics["투자금 대비 분배율"] != metrics["시드 대비 분배율"]
 
 
 def test_cash_ratio_is_shown_when_a_lot_of_seed_is_idle(market):

@@ -90,6 +90,38 @@ FULL_SQUAD = len(pitch_grid.all_slots())  # 전술판 전체 슬롯 수 (인수�
 # 숫자 표기(won / pct / won_short / native_amt)는 formatting.py 로 옮겼습니다.
 # app.py 는 Streamlit 실행 파일이라 그냥 import 할 수 없어서 테스트를 붙일 수가
 # 없는데, 돈을 잘못 적으면 사용자가 그대로 오해하는 부분이라 따로 뗐습니다.
+def comment_text(comp) -> str:
+    """커뮤니티 댓글에 그대로 붙여넣을 수 있는 글자 요약 (사용자 요청).
+
+    📸 캡처는 이미지라, 네이버 댓글처럼 **이미지가 아예 안 되는 곳**에서는 못 씁니다.
+    거기서도 포트폴리오를 보여줄 수 있게 같은 내용을 글자로 냅니다.
+
+    캡처 이미지와 **같은 숫자, 같은 순서**여야 합니다. 둘이 다르면 같은 포트폴리오를
+    두 군데에 올렸을 때 숫자가 어긋나 보입니다.
+    """
+    lines = [
+        f"[{config.app_name()}] {P.name or '내 배당 포트폴리오'}",
+        f"총 원금 {won_short(comp.total_actual_investment_krw)}"
+        f" · 월평균 분배금 {won_short(comp.monthly_distribution_krw)}"
+        f" · 연 {won_short(comp.annual_distribution_krw)}"
+        f" (투자금 대비 분배율 {pct(comp.income_yield_on_invested_pct)})",
+        f"※ 세전 · 최근 12개월 분배금 기준 · {config.today_local():%Y-%m-%d}",
+        "",
+    ]
+    for r in sorted(comp.rows, key=lambda r: -r.security.target_weight):
+        s = r.security
+        name = (f"{s.display_name} ({s.ticker})" if s.market == MARKET_KR
+                else (s.ticker or s.display_name))
+        lines.append(f"· {name} {pct(s.target_weight * 100)}"
+                     f" · {won_short(r.actual_investment_krw)}"
+                     f" · 월 {won_short(r.monthly_distribution_krw)}")
+    # TODO(URL 공유): 아래 주소 뒤에 "?p=..." 형태로 이 포트폴리오를 그대로 여는
+    # 링크를 붙일 예정입니다. 그러면 댓글을 읽은 사람이 한 번 눌러서 바로 열어보고
+    # 자기 시드로 바꿔볼 수 있습니다. (지금은 앱 주소만)
+    lines += ["", f"⚽ {config.app_name()} · {config.APP_PUBLIC_URL}"]
+    return "\n".join(lines)
+
+
 def note(html_text: str) -> None:
     """그냥 지나치면 숫자를 오해하게 되는 설명 (ui_theme 의 .note).
 
@@ -211,16 +243,18 @@ with hc1:
     # 빈 화면에서 뭘 담아야 할지 막막하지 않도록, 버튼 한 번으로 채워지는 예시 3종.
     # 전술명 아래 남는 자리에 가로로 놓아 헤더 높이를 늘리지 않습니다.
     # 담긴 종목을 덮어쓰는 동작이라, 이미 담은 게 있으면 한 번 더 확인받습니다.
-    st.caption(f"처음이라면 예시로 시작해보세요 (시드 {won(presets.PRESET_CAPITAL_KRW)} 기준) "
-               f"· 예시일 뿐이며 투자 추천이 아닙니다.")
-    for _col, _preset in zip(st.columns(len(presets.ALL_BUTTONS)), presets.ALL_BUTTONS):
-        if _col.button(_preset.label, key=f"preset_{_preset.key}", width="stretch",
-                       help=_preset.summary):
-            if P.securities:
-                st.session_state["preset_pending"] = _preset.key
-            else:
-                _apply_preset(_preset)
-            st.rerun()
+    # 윗줄 = 성향별(안정/보통/공격), 아랫줄 = 목표 금액별 + 초기화.
+    # 한 줄에 6개를 넣으면 버튼 글자가 잘려서 두 줄로 나눴습니다.
+    st.caption("처음이라면 예시로 시작해보세요 · 예시일 뿐이며 투자 추천이 아닙니다.")
+    for _row in (presets.PRESETS[:3], presets.PRESETS[3:] + (presets.RESET,)):
+        for _col, _preset in zip(st.columns(len(_row)), _row):
+            if _col.button(_preset.label, key=f"preset_{_preset.key}", width="stretch",
+                           help=_preset.summary):
+                if P.securities:
+                    st.session_state["preset_pending"] = _preset.key
+                else:
+                    _apply_preset(_preset)
+                st.rerun()
 
     _pending = presets.get(st.session_state.get("preset_pending") or "")
     if _pending:
@@ -504,7 +538,9 @@ with summary_bar_slot:
         ("연 분배금", won(comp.annual_distribution_krw), False),
         # 분모를 '실제 투자금'으로 씁니다. 시드를 다 담지 않았을 때 시드 기준으로 보여주면
         # "분배율 15% 짜리를 담았는데 왜 0.7% 라고 나오지?" 하는 오해가 생깁니다.
-        ("투자금 대비", pct(comp.income_yield_on_invested_pct), False),
+        # "투자금 대비" 만 적으면 무엇 대비 무엇인지 몰라서 처음 보는 사람은
+        # 감을 못 잡습니다. 무슨 비율인지까지 적습니다 (사용자 요청).
+        ("투자금 대비 분배율", pct(comp.income_yield_on_invested_pct), False),
     ])
 
 # ---- 중: 전술판 (세로, FM 풍 포지션 슬롯) -----------------------------
@@ -577,6 +613,15 @@ with col_mid:
     elif comp.cash_weight > 0:
         st.info(f"살(BUY) 비율 합계 {comp.weight_total*100:.2f}% · 나머지 "
                 f"{comp.cash_weight*100:.2f}% 는 현금으로 남습니다.")
+
+    # ---- 📋 댓글용 텍스트 (사용자 요청) ---------------------------------------
+    # 네이버 댓글처럼 **이미지 첨부가 아예 안 되는 곳**이 많습니다. 📸 복사는
+    # 글쓰기 창에 붙여넣을 수 있는 곳에서만 통해서, 글자로 옮길 길이 따로 필요합니다.
+    # st.code 는 오른쪽 위에 복사 버튼을 기본으로 달아 주므로 버튼을 새로 만들지 않습니다.
+    if P.securities:
+        with st.expander("📋 댓글에 붙여넣을 텍스트"):
+            st.code(comment_text(comp), language=None)
+            st.caption("오른쪽 위 복사 아이콘을 누르면 그대로 복사됩니다.")
 
 # ---- 우 (Phase B): 선택 종목의 계산 결과 표시 --------------------------
 with col_right:
@@ -714,11 +759,13 @@ s4.metric("한 달에 받을 분배금", won(comp.monthly_distribution_krw))
 s5.metric("연 예상 분배금", won(comp.annual_distribution_krw))
 # 두 수익률을 나란히 보여줍니다. 시드를 다 담지 않으면 둘이 크게 벌어지는데,
 # 하나만 보여주면 "분배율 15% 짜리를 담았는데 왜 0.7%?" 하는 오해가 생깁니다.
-s6.metric("투자금 대비 예상 수익", pct(comp.income_yield_on_invested_pct),
+# "예상 수익" 은 가격이 올라서 버는 것까지 포함한다고 오해할 수 있어서 "분배율"로
+# 통일했습니다. 위쪽 요약 바와도 같은 말을 씁니다 (사용자 요청).
+s6.metric("투자금 대비 분배율", pct(comp.income_yield_on_invested_pct),
           help="실제로 종목에 들어간 돈 기준입니다. 담은 종목들의 평균 분배율에 해당하며, "
                "현금을 얼마나 남겨뒀는지와 무관합니다.")
 s7, s8, _s9 = st.columns(3)
-s7.metric("시드 대비 예상 수익", pct(comp.income_yield_pct),
+s7.metric("시드 대비 분배율", pct(comp.income_yield_pct),
           help="남겨둔 현금까지 포함한 내 시드 전체 기준입니다. 시드의 일부만 담으면 "
                "낮게 나오는 것이 정상이며, 현금을 놀리고 있다는 뜻입니다.")
 if comp.cash_balance_krw > 0 and comp.initial_capital_krw > 0:
