@@ -78,9 +78,35 @@ def test_late_listing_message_suggests_a_start_date_that_works(market):
     assert "2024-02-01" in res.message            # 전부 포함되는 가장 이른 날
     assert "이후로 잡으면" in res.message
 
+    # 화면이 버튼 하나로 고쳐줄 수 있게 날짜를 값으로도 내보내야 한다.
+    # 글자로만 있으면 사용자가 직접 옮겨 적어야 한다.
+    assert res.suggested_start == date(2024, 2, 1)
+
     # 안내한 날짜로 다시 돌리면 실제로 성공해야 한다
-    ok = backtest_service.run_backtest(p, date(2024, 2, 1))
+    ok = backtest_service.run_backtest(p, res.suggested_start)
     assert ok.ok is True, ok.message
+    assert ok.suggested_start is None             # 성공했으면 고칠 게 없다
+
+
+def test_late_listing_message_uses_korean_names_not_stock_codes(market):
+    """한국 종목은 티커가 종목코드라, 그대로 쓰면 '어떤 종목이 늦게 상장했는지'
+    사용자가 알 수 없습니다."""
+    market.set_kr({
+        "458730": {"currency": "KRW",
+                   "history": daily_series("2021-01-04", "2026-09-10", 100.0)},
+        "498400": {"currency": "KRW",
+                   "history": daily_series("2024-11-01", "2026-09-10", 10.0)},
+    })
+    p = Portfolio(name="bt", initial_capital_krw=2_000_000)
+    p.add(Security(market="KR", ticker="458730", name="TIGER 미국배당다우존스",
+                   display_name="TIGER 미국배당다우존스", currency="KRW", target_weight=0.5))
+    p.add(Security(market="KR", ticker="498400", name="KODEX 200타겟위클리커버드콜",
+                   display_name="KODEX 200타겟위클리커버드콜", currency="KRW", target_weight=0.5))
+
+    res = backtest_service.run_backtest(p, date(2021, 1, 4))
+    assert res.ok is False
+    assert "KODEX 200타겟위클리커버드콜" in res.message, res.message
+    assert "498400" not in res.message, res.message
 
 
 def test_us_backtest_uses_past_fx_not_current(market):

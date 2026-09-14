@@ -838,9 +838,17 @@ with b3:
 # ---- 백테스트 (인수인계서 66~77) ----
 with st.expander("📈 예전부터 해봤다면? (그냥 사서 계속 갖기)"):
     st.caption(config.BACKTEST_DISCLAIMER)
+
+    # 아래 "이 날짜로 바꾸고 다시 실행" 버튼이 넣어둔 값을 여기서 꺼내 씁니다.
+    # ⚠ 반드시 date_input 을 만들기 **전에** 해야 합니다. 위젯이 만들어진 뒤에
+    # session_state 를 고치면 StreamlitWidgetAlreadyInstantiatedError 가 납니다.
+    _pending_start = st.session_state.pop("bt_pending_start", None)
+    if _pending_start is not None:
+        st.session_state["bt_start"] = _pending_start
+
     f1, f2, f3 = st.columns([1, 1, 1])
     with f1:
-        bt_start = st.date_input("시작일", value=date(2021, 1, 4),
+        bt_start = st.date_input("시작일", value=date(2021, 1, 4), key="bt_start",
                                  min_value=date(1990, 1, 1), max_value=date.today())
     with f2:
         bt_cap = money_input("초기 투자금 (₩)", key="money_bt_capital",
@@ -848,7 +856,9 @@ with st.expander("📈 예전부터 해봤다면? (그냥 사서 계속 갖기)"
     with f3:
         bt_incl = st.checkbox("분배금 포함 (현금 수령, 재투자 없음)", value=False)
 
-    if st.button("실행하기", type="primary"):
+    # 날짜를 고쳐 넣은 직후에는 사용자가 "실행하기"를 한 번 더 누르지 않아도 되게 자동 실행.
+    _autorun = st.session_state.pop("bt_autorun", False)
+    if st.button("실행하기", type="primary") or _autorun:
         if not P.securities:
             st.warning("종목을 먼저 추가하세요.")
         else:
@@ -862,6 +872,14 @@ with st.expander("📈 예전부터 해봤다면? (그냥 사서 계속 갖기)"
     if r is not None:
         if not r.ok:
             st.error(r.message)
+            # 상장이 늦은 종목 때문에 막힌 경우: 날짜를 직접 옮겨 적지 않아도 되게
+            # 한 번에 고쳐서 다시 돌려줍니다 (사용자 요청).
+            if r.suggested_start:
+                if st.button(f"📅 시작일을 {r.suggested_start} 로 바꾸고 다시 실행",
+                             key="bt_fix_start", type="primary"):
+                    st.session_state["bt_pending_start"] = r.suggested_start
+                    st.session_state["bt_autorun"] = True
+                    st.rerun()
         else:
             st.markdown("**BACKTEST RESULT**")
             g1, g2, g3 = st.columns(3)

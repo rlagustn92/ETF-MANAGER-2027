@@ -14,7 +14,7 @@ from streamlit.testing.v1 import AppTest
 
 from models.portfolio import Portfolio
 from models.security import Security
-from tests.conftest import series
+from tests.conftest import daily_series, series
 
 APP_PATH = str(pathlib.Path(__file__).resolve().parent.parent / "app.py")
 
@@ -74,6 +74,42 @@ def test_principal_column_sums_to_the_reported_total(market):
     texts = " ".join(w.value for w in at.markdown) + " ".join(
         str(w.value) for w in at.text)
     assert f"총 원금: ₩{result.total_invested_krw:,.0f}" in texts
+
+
+def test_one_click_fixes_a_too_early_start_date(market):
+    """상장이 늦은 종목 때문에 막혔을 때, 사용자가 날짜를 직접 옮겨 적지 않아도
+    버튼 한 번으로 고쳐서 다시 돌아가야 합니다 (사용자 요청)."""
+    market.set_fx(rate=1_000.0)
+    market.set_kr({
+        "458730": {"currency": "KRW",
+                   "history": daily_series("2021-01-04", "2026-09-10", 10_000.0)},
+        "498400": {"currency": "KRW",
+                   "history": daily_series("2024-11-01", "2026-09-10", 20_000.0)},
+    })
+    p = Portfolio(name="bt", initial_capital_krw=10_000_000)
+    p.add(Security(market="KR", ticker="458730", display_name="TIGER 미국배당다우존스",
+                   currency="KRW", target_weight=0.5))
+    p.add(Security(market="KR", ticker="498400", display_name="KODEX 200타겟위클리커버드콜",
+                   currency="KRW", target_weight=0.5))
+
+    at = AppTest.from_file(APP_PATH, default_timeout=90)
+    at.session_state["portfolio"] = p
+    at.run()
+    [d for d in at.date_input if d.label == "시작일"][0].set_value(date(2021, 1, 4)).run()
+    [b for b in at.button if b.label == "실행하기"][0].click().run()
+    assert not at.exception
+    assert at.session_state["bt_result"].ok is False
+
+    fix = [b for b in at.button if b.label.startswith("📅")]
+    assert fix, "날짜를 고쳐주는 버튼이 없습니다"
+    assert "2024-11-01" in fix[0].label
+
+    fix[0].click().run()
+    assert not at.exception
+    # 날짜가 바뀌고, 다시 누르지 않아도 백테스트가 성공해 있어야 한다
+    assert at.session_state["bt_start"] == date(2024, 11, 1)
+    assert at.session_state["bt_result"].ok is True, at.session_state["bt_result"].message
+    assert not [b for b in at.button if b.label.startswith("📅")]
 
 
 def test_korean_rows_show_the_name_not_the_stock_code(market):

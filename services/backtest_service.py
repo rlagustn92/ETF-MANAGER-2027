@@ -38,7 +38,7 @@ from data.providers import fx_provider
 from data.providers.base import DataUnavailable, HISTORY_CLOSE_COL
 from data.providers.registry import get_provider
 from models.portfolio import Portfolio
-from models.security import MARKET_US, Security
+from models.security import MARKET_KR, MARKET_US, Security
 from services import calculation_service as calc
 
 # 시작일과 종목 데이터 시작일의 허용 격차(휴장/연휴). 이보다 크면 "상장 이후" 로 판단.
@@ -71,6 +71,10 @@ class BacktestResult:
     ok: bool
     message: str = ""
     input_start: date | None = None
+    # 상장이 늦은 종목 때문에 실패했을 때, "이 날짜로 바꾸면 된다" 는 날짜.
+    # 메시지 안에 글자로만 적어두면 사용자가 직접 옮겨 적어야 해서, 화면이 버튼
+    # 하나로 고쳐줄 수 있게 값으로도 내보냅니다 (사용자 요청).
+    suggested_start: date | None = None
     actual_buy_date: date | None = None
     data_as_of: date | None = None
     initial_capital_krw: float = 0.0
@@ -131,7 +135,9 @@ def run_backtest(
             )
         first_date = df.index.min().date()
         if first_date > start + timedelta(days=LISTING_TOLERANCE_DAYS):
-            late_listed.append(f"{sec.ticker}(데이터 시작 {first_date})")
+            # 한국 종목은 티커가 종목코드라 그대로 쓰면 "458730" 만 보입니다.
+            _name = sec.display_name if sec.market == MARKET_KR else sec.ticker
+            late_listed.append(f"{_name}(데이터 시작 {first_date})")
             latest_listing = first_date if latest_listing is None else max(latest_listing, first_date)
         histories[sec.id] = df
 
@@ -139,7 +145,7 @@ def run_backtest(
         # 그냥 "안 된다"로 끝내면 사용자가 어느 날짜로 바꿔야 할지 직접 찾아야 합니다.
         # 전부 포함되는 가장 이른 날짜를 같이 알려줍니다 (상장이 늦은 종목 기준).
         return BacktestResult(
-            ok=False, input_start=start,
+            ok=False, input_start=start, suggested_start=latest_listing,
             message=("백테스트 불가: 다음 종목은 시작일 이후에 상장되었습니다 -> "
                      + ", ".join(late_listed)
                      + (f" · 시작일을 {latest_listing} 이후로 잡으면 전부 포함됩니다."
