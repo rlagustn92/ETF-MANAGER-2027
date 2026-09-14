@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="ko">
 <head>
 <meta charset="utf-8" />
@@ -189,13 +189,8 @@ const SHIRT_RATIO = 1.18;            // 세로/가로
 const US_RED = "#C8102E", US_NAVY = "#0A2B5C", US_BODY = "#F8F8F4";
 // 가슴 성조기 패치 (상반신 절반을 채우는 크기 -- 작아져도 미국인 게 바로 보이도록)
 const FLAG = { x: 27, y: 28, w: 46, h: 28 };
-
-/** 성조기: 흰 바탕 + 빨간 줄 4개 + 왼쪽 위 남색 캔턴 + 별. */
-function flagParts() {
-  const s = FLAG.h / 7, out = [];
-  for (let i = 0; i < 7; i += 2) out.push({ x: FLAG.x, y: FLAG.y + i * s, w: FLAG.w, h: s });
-  return { stripes: out, canton: { x: FLAG.x, y: FLAG.y, w: FLAG.w * 0.42, h: s * 4 } };
-}
+// 한국 종목 유니폼의 태극 위치/크기 (목 바로 아래 한가운데)
+const TAEGEUK_Y = 34, TAEGEUK_R = 9;
 
 /** 별 하나(꼭짓점 5개)의 path 문자열. SVG 와 canvas(Path2D) 가 같이 씁니다. */
 function starPath(cx, cy, r) {
@@ -209,20 +204,87 @@ function starPath(cx, cy, r) {
   return d + "Z";
 }
 
-/** 캔턴 안의 별들.
- *  진짜 성조기는 50개지만 이 크기(화면에서 캔턴이 약 11px)에서는 흰 얼룩으로 뭉갭니다.
- *  그래서 알아볼 수 있는 최소 개수로 줄여 3열 x 2행 = 6개만 크게 찍습니다. */
-function cantonStarsPath(canton) {
-  const cols = 3, rows = 2;
-  const cw = canton.w / cols, ch = canton.h / rows;
-  const r = Math.min(cw, ch) * 0.42;
-  let d = "";
-  for (let c = 0; c < cols; c++) {
-    for (let rw = 0; rw < rows; rw++) {
-      d += starPath(canton.x + cw * (c + 0.5), canton.y + ch * (rw + 0.5), r);
+// 성조기를 몇 줄/몇 별로 그릴지.
+// 처음에는 "이 크기(화면에서 국기 폭 26px)면 줄이 1px 도 안 되니 뭉갠다"고 보고 줄을
+// 7~9개로 줄였는데, 실제로 1:1 로 찍어서 보니 **13줄(진짜 성조기)이 제일 또렷했습니다.**
+// 브라우저 안티앨리어싱이 얇은 줄을 잘 처리해 주고, 오히려 줄을 줄이면 굵고 조잡해
+// 보입니다. 그래서 가슴 패치는 실제 국기 그대로 갑니다.
+// 명단 표식은 캡처 이미지가 커뮤니티에서 절반 크기로 줄어 보이는 경우가 많아
+// 한 단계 성깁니다.
+const FLAG_SPEC = { chest: { stripes: 13, cols: 6, rows: 5 },   // 유니폼 가슴 패치
+                    tiny:  { stripes: 9,  cols: 3, rows: 3 } }; // 명단 표식(더 작음)
+
+/** 성조기 도형. SVG 와 canvas 가 같은 좌표를 쓰도록 한 곳에서 계산합니다. */
+function usFlagParts(x, y, w, h, spec) {
+  const n = spec.stripes, s = h / n, stripes = [];
+  for (let i = 0; i < n; i += 2) stripes.push({ x, y: y + i * s, w, h: s });
+  // 캔턴은 실제 비율(가로 0.4, 줄 7개분 높이)에 맞춥니다.
+  const cantonRows = Math.max(2, Math.round(n * 7 / 13));
+  const canton = { x, y, w: w * 0.40, h: s * cantonRows };
+  const cw = canton.w / spec.cols, ch = canton.h / spec.rows;
+  const r = Math.min(cw, ch) * 0.44;
+  let stars = "";
+  for (let c = 0; c < spec.cols; c++) {
+    for (let rw = 0; rw < spec.rows; rw++) {
+      stars += starPath(canton.x + cw * (c + 0.5), canton.y + ch * (rw + 0.5), r);
     }
   }
-  return d;
+  return { stripes, canton, stars };
+}
+
+function usFlagSVG(x, y, w, h, spec) {
+  const f = usFlagParts(x, y, w, h, spec);
+  return '<rect x="' + x + '" y="' + y + '" width="' + w + '" height="' + h + '" fill="#ffffff"/>' +
+    f.stripes.map(r => '<rect x="' + r.x + '" y="' + r.y.toFixed(2) + '" width="' + r.w +
+                       '" height="' + r.h.toFixed(2) + '" fill="' + US_RED + '"/>').join("") +
+    '<rect x="' + f.canton.x + '" y="' + f.canton.y + '" width="' + f.canton.w.toFixed(2) +
+      '" height="' + f.canton.h.toFixed(2) + '" fill="' + US_NAVY + '"/>' +
+    '<path d="' + f.stars + '" fill="#ffffff"/>' +
+    '<rect x="' + x + '" y="' + y + '" width="' + w + '" height="' + h +
+      '" fill="none" stroke="' + US_NAVY + '" stroke-width="1.4"/>';
+}
+
+function drawUSFlag(ctx, x, y, w, h, spec, border) {
+  const f = usFlagParts(x, y, w, h, spec);
+  ctx.fillStyle = "#ffffff"; ctx.fillRect(x, y, w, h);
+  ctx.fillStyle = US_RED;
+  for (const r of f.stripes) ctx.fillRect(r.x, r.y, r.w, r.h);
+  ctx.fillStyle = US_NAVY;
+  ctx.fillRect(f.canton.x, f.canton.y, f.canton.w, f.canton.h);
+  ctx.fillStyle = "#ffffff";
+  ctx.fill(new Path2D(f.stars));
+  ctx.lineWidth = border; ctx.strokeStyle = US_NAVY;
+  ctx.strokeRect(x, y, w, h);
+}
+
+// ---- 태극 (한국 종목 유니폼의 목 아래 한가운데) ----------------------------
+// 태극기를 통째로 넣으면 이 크기에서 4괘(건곤감리)가 점으로 뭉개져 오히려 지저분해서,
+// 원형 태극만 씁니다(사용자가 "동그란 태극기도 괜찮다"고 함).
+// 빨강 영역 = 위쪽 반원 + 반지름 절반짜리 반원 두 개로 만드는 고전적인 S 자입니다.
+const TAEGEUK_RED = "#CD2E3A", TAEGEUK_BLUE = "#0047A0";
+
+function taegeukRedPath(cx, cy, r) {
+  const h = r / 2;
+  return "M " + (cx - r) + " " + cy +
+         " A " + r + " " + r + " 0 0 1 " + (cx + r) + " " + cy +
+         " A " + h + " " + h + " 0 0 1 " + cx + " " + cy +
+         " A " + h + " " + h + " 0 0 0 " + (cx - r) + " " + cy + " Z";
+}
+
+function taegeukSVG(cx, cy, r) {
+  // 어떤 유니폼 색 위에서도 보이도록 흰 테두리를 두릅니다.
+  return '<circle cx="' + cx + '" cy="' + cy + '" r="' + (r + 1.6) + '" fill="#ffffff"/>' +
+         '<circle cx="' + cx + '" cy="' + cy + '" r="' + r + '" fill="' + TAEGEUK_BLUE + '"/>' +
+         '<path d="' + taegeukRedPath(cx, cy, r) + '" fill="' + TAEGEUK_RED + '"/>';
+}
+
+function drawTaegeuk(ctx, cx, cy, r) {
+  ctx.beginPath(); ctx.arc(cx, cy, r + 1.6, 0, Math.PI * 2);
+  ctx.fillStyle = "#ffffff"; ctx.fill();
+  ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2);
+  ctx.fillStyle = TAEGEUK_BLUE; ctx.fill();
+  ctx.fillStyle = TAEGEUK_RED;
+  ctx.fill(new Path2D(taegeukRedPath(cx, cy, r)));
 }
 
 /** 화면용 유니폼 SVG 문자열. uid 는 clipPath id 충돌을 막기 위한 것. */
@@ -230,26 +292,20 @@ function jerseySVG(kit, weightPct, uid) {
   const num = fmtNum(weightPct);
   let inner, numFill, brandTag = "";
   if (kit.style === "us") {
-    const f = flagParts();
     inner =
       '<rect x="0" y="0" width="100" height="118" fill="' + US_BODY + '"/>' +
       '<rect x="0" y="0" width="24" height="40" fill="' + US_RED + '"/>' +
       '<rect x="76" y="0" width="24" height="40" fill="' + US_RED + '"/>' +
       '<path d="' + COLLAR_PATH + '" fill="' + US_NAVY + '"/>' +
-      '<rect x="' + FLAG.x + '" y="' + FLAG.y + '" width="' + FLAG.w + '" height="' + FLAG.h + '" fill="#fff"/>' +
-      f.stripes.map(r => '<rect x="' + r.x + '" y="' + r.y + '" width="' + r.w +
-                         '" height="' + r.h + '" fill="' + US_RED + '"/>').join("") +
-      '<rect x="' + f.canton.x + '" y="' + f.canton.y + '" width="' + f.canton.w +
-        '" height="' + f.canton.h + '" fill="' + US_NAVY + '"/>' +
-      '<path d="' + cantonStarsPath(f.canton) + '" fill="#ffffff"/>' +
-      '<rect x="' + FLAG.x + '" y="' + FLAG.y + '" width="' + FLAG.w + '" height="' + FLAG.h +
-        '" fill="none" stroke="' + US_NAVY + '" stroke-width="1.6"/>';
+      usFlagSVG(FLAG.x, FLAG.y, FLAG.w, FLAG.h, FLAG_SPEC.chest);
     numFill = US_NAVY;
   } else {
-    inner = '<rect x="0" y="0" width="100" height="118" fill="' + kit.main + '"/>';
+    inner = '<rect x="0" y="0" width="100" height="118" fill="' + kit.main + '"/>' +
+            // 목 바로 아래 한가운데에 태극 (사용자 요청)
+            taegeukSVG(50, TAEGEUK_Y, TAEGEUK_R);
     numFill = kit.text;
     if (kit.brand) {
-      brandTag = '<text x="50" y="52" text-anchor="middle" font-size="13" font-weight="700" ' +
+      brandTag = '<text x="50" y="60" text-anchor="middle" font-size="12" font-weight="700" ' +
                  'fill="' + kit.text + '" opacity="0.75">' + escapeHtml(kit.brand.slice(0, 2)) + '</text>';
     }
   }
@@ -401,19 +457,11 @@ function drawJersey(ctx, cx, topY, w, kit, weightPct) {
     ctx.fillStyle = US_BODY; ctx.fillRect(0, 0, 100, 118);
     ctx.fillStyle = US_RED;  ctx.fillRect(0, 0, 24, 40); ctx.fillRect(76, 0, 24, 40);
     ctx.fillStyle = US_NAVY; ctx.fill(new Path2D(COLLAR_PATH));
-    const f = flagParts();
-    ctx.fillStyle = "#fff"; ctx.fillRect(FLAG.x, FLAG.y, FLAG.w, FLAG.h);
-    ctx.fillStyle = US_RED;
-    for (const r of f.stripes) ctx.fillRect(r.x, r.y, r.w, r.h);
-    ctx.fillStyle = US_NAVY;
-    ctx.fillRect(f.canton.x, f.canton.y, f.canton.w, f.canton.h);
-    ctx.fillStyle = "#ffffff";
-    ctx.fill(new Path2D(cantonStarsPath(f.canton)));
-    ctx.lineWidth = 1.6; ctx.strokeStyle = US_NAVY;
-    ctx.strokeRect(FLAG.x, FLAG.y, FLAG.w, FLAG.h);
+    drawUSFlag(ctx, FLAG.x, FLAG.y, FLAG.w, FLAG.h, FLAG_SPEC.chest, 1.4);
     numFill = US_NAVY;
   } else {
     ctx.fillStyle = kit.main; ctx.fillRect(0, 0, 100, 118);
+    drawTaegeuk(ctx, 50, TAEGEUK_Y, TAEGEUK_R);
     numFill = kit.text;
   }
   ctx.restore();
@@ -424,8 +472,8 @@ function drawJersey(ctx, cx, topY, w, kit, weightPct) {
   if (kit.style !== "us" && kit.brand) {
     ctx.globalAlpha = 0.75;
     ctx.fillStyle = kit.text;
-    ctx.font = 'bold 13px ' + FONT;
-    ctx.fillText(kit.brand.slice(0, 2), 50, 52);
+    ctx.font = 'bold 12px ' + FONT;
+    ctx.fillText(kit.brand.slice(0, 2), 50, 60);
     ctx.globalAlpha = 1;
   }
   // 등번호 + % : 둘을 합친 폭을 재서 가운데 정렬
@@ -444,26 +492,6 @@ function drawJersey(ctx, cx, topY, w, kit, weightPct) {
   ctx.textAlign = "center";
 
   ctx.restore();
-}
-
-/** 명단 왼쪽에 찍는 작은 성조기.
- *  예전에는 미국 종목도 흰 네모 한 칸이라 "색이 안 칠해진 칸"처럼 보였습니다.
- *  여기는 캔턴이 캡처 해상도에서 10px 남짓이라 별은 2x2 로만 찍습니다. */
-function drawMiniFlag(ctx, x, y, w, h) {
-  const s = h / 7;
-  ctx.fillStyle = "#ffffff"; ctx.fillRect(x, y, w, h);
-  ctx.fillStyle = US_RED;
-  for (let i = 0; i < 7; i += 2) ctx.fillRect(x, y + i * s, w, s);
-  const cw = w * 0.42, ch = s * 4;
-  ctx.fillStyle = US_NAVY; ctx.fillRect(x, y, cw, ch);
-  ctx.fillStyle = "#ffffff";
-  const r = Math.min(cw / 2, ch / 2) * 0.44;
-  let d = "";
-  for (let c = 0; c < 2; c++)
-    for (let rw = 0; rw < 2; rw++)
-      d += starPath(x + cw * (c + 0.5) / 2, y + ch * (rw + 0.5) / 2, r);
-  ctx.fill(new Path2D(d));
-  ctx.lineWidth = 1; ctx.strokeStyle = US_NAVY; ctx.strokeRect(x, y, w, h);
 }
 
 /** 폭에 안 들어가면 끝을 … 로 줄입니다. */
@@ -606,7 +634,9 @@ async function buildPitchCanvas() {
       const swX = pad + 2 * scale;
       if (item.us) {
         const fh = 9 * scale;
-        drawMiniFlag(ctx, swX, y + (rowH - fh) / 2, slotW, fh);
+        // 명단 표식도 유니폼 가슴과 같은 성조기. 다만 여기는 더 작아서
+        // 줄 수/별 수를 한 단계 줄인 spec 을 씁니다.
+        drawUSFlag(ctx, swX, y + (rowH - fh) / 2, slotW, fh, FLAG_SPEC.tiny, 1 * scale);
       } else {
         const sw = 10 * scale;
         ctx.fillStyle = item.color;
