@@ -33,6 +33,7 @@ import config
 import pitch_grid
 import pitch_kit
 import presets
+from formatting import native_amt, pct, won, won_short
 from components.buy_input import buy_input
 from components.football_pitch import football_pitch
 from data.providers import cache
@@ -86,52 +87,9 @@ FULL_SQUAD = len(pitch_grid.all_slots())  # 전술판 전체 슬롯 수 (인수�
 # =====================================================================
 # 표시/입력 헬퍼
 # =====================================================================
-def won(x) -> str:
-    if x is None:
-        return config.NO_DATA_TEXT
-    return f"₩{x:,.0f}"
-
-
-def pct(x, digits: int = 2) -> str:
-    if x is None:
-        return config.NO_DATA_TEXT
-    return f"{x:.{digits}f}%"
-
-
-def won_short(x) -> str:
-    """캡처 이미지처럼 자리가 좁은 곳에서 쓰는 짧은 금액 표기.
-
-    "₩45,000,000" 은 이미지 안에서 너무 길고 한눈에 안 읽힙니다.
-    한국에서 실제로 말하는 단위(만/억)로 줄입니다.
-        45,000,000 -> 4,500만     187,000 -> 18.7만     123,400,000 -> 1.23억
-    """
-    if x is None:
-        return config.NO_DATA_TEXT
-    v = float(x)
-    sign = "-" if v < 0 else ""
-    v = abs(v)
-    if v >= 100_000_000:
-        return f"{sign}{v / 100_000_000:,.2f}".rstrip("0").rstrip(".") + "억"
-    if v >= 10_000:
-        man = v / 10_000
-        return f"{sign}{man:,.0f}만" if man >= 100 else f"{sign}{man:,.1f}만"
-    return f"{sign}{v:,.0f}원"
-
-
-def native_amt(x, currency: str, usd_digits: int = 2) -> str:
-    """종목의 "원래 통화" 기준 금액(가격/분배금 등) 표시. 원화는 소수점을 쓰지 않습니다.
-
-    한국 원화는 실질적으로 1원 미만 단위가 없어 소수점이 의미가 없으므로 정수로,
-    달러 등 다른 통화는 usd_digits 자리(기본 2자리)까지 보여줍니다.
-    (환율 "비율" 자체는 여기 대상이 아닙니다 -- USD/KRW 환율 표시는 그대로 소수점 유지)
-    """
-    if x is None:
-        return config.NO_DATA_TEXT
-    if currency == "KRW":
-        return f"{x:,.0f}"
-    return f"{x:,.{usd_digits}f}"
-
-
+# 숫자 표기(won / pct / won_short / native_amt)는 formatting.py 로 옮겼습니다.
+# app.py 는 Streamlit 실행 파일이라 그냥 import 할 수 없어서 테스트를 붙일 수가
+# 없는데, 돈을 잘못 적으면 사용자가 그대로 오해하는 부분이라 따로 뗐습니다.
 def note(html_text: str) -> None:
     """그냥 지나치면 숫자를 오해하게 되는 설명 (ui_theme 의 .note).
 
@@ -391,10 +349,11 @@ with col_right:
         _auto_label = pitch_kit.card_label(sel.market, sel.ticker, sel.display_name)
         _typed = st.text_input(
             "전술판 이름표", value=sel.card_label, key=f"lbl_{sel.id}",
-            placeholder=_auto_label,
+            placeholder=_auto_label, max_chars=20,
             help="유니폼 아래에 찍히는 글자입니다. 비워두면 정식 이름을 자동으로 줄여서 씁니다.",
         )
-        sel.card_label = (_typed or "").strip()
+        # 줄바꿈/탭이 섞이면(불러온 JSON 등) 이름표에서 글자가 사라진 것처럼 보이므로 한 칸으로 정리.
+        sel.card_label = re.sub(r"\s+", " ", _typed or "").strip()
 
         slider_key, num_key = f"wsel_{sel.id}", f"wsel_num_{sel.id}"
         if slider_key not in st.session_state:

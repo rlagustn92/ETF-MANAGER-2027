@@ -11,6 +11,8 @@ from __future__ import annotations
 
 import re
 
+import pytest
+
 import config
 
 
@@ -38,6 +40,35 @@ def test_empty_or_blank_name_still_produces_a_filename():
         n = config.capture_image_filename(blank)
         assert n.endswith(".png")
         assert "tactic" in n
+
+
+@pytest.mark.parametrize("name", ["전술\n두번째", "탭\t포함", "줄\r바꿈"])
+def test_control_characters_are_removed(name):
+    """줄바꿈·탭이 들어간 파일명은 윈도우·맥 모두 거부합니다. 그러면 '저장'을
+    눌러도 아무 일이 안 일어나서 사용자는 왜 안 되는지 알 수가 없습니다.
+    (한 줄 입력칸에는 못 넣지만, 전술 JSON 을 손으로 고쳐 불러오면 들어옵니다)"""
+    out = config.capture_image_filename(name)
+    assert all(ord(c) >= 32 for c in out), repr(out)
+
+
+def test_very_long_tactic_name_is_capped():
+    """안 자르면 파일명이 OS 한계(255자)를 넘어 저장이 조용히 실패합니다."""
+    out = config.capture_image_filename("가" * 300)
+    assert len(out) <= 100, len(out)
+    assert out.endswith(".png")
+
+
+@pytest.mark.parametrize("name", ["..", "....", "  .  ", ".hidden.", "."])
+def test_dot_only_names_do_not_produce_weird_filenames(name):
+    out = config.capture_image_filename(name)
+    body = out[: -len(".png")]
+    assert not body.split("_")[-2].endswith("."), out
+    assert ".." not in out, out
+
+
+def test_path_separators_cannot_escape():
+    out = config.capture_image_filename("전술/../../etc/passwd")
+    assert "/" not in out and "\\" not in out and ".." not in out
 
 
 def test_json_and_png_names_share_the_same_tactic_part():

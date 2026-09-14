@@ -103,6 +103,16 @@ def test_unknown_etf_does_not_crash_and_is_not_worse_than_before():
     assert pitch_kit.display_width(out) <= pitch_kit.MAX_LABEL_WIDTH
 
 
+def test_label_width_budget_is_paired_with_the_frontend():
+    """MAX_LABEL_WIDTH 는 전술판 이름표 글자 크기(index.html 의 tagFontPx)와 한 쌍입니다.
+
+    tagFontPx 는 `이름표 안쪽 폭 / 8.8` 로 글자 크기를 정합니다. 여기 값을 올려 놓고
+    프론트엔드를 안 고치면, 줄인 이름이 이번엔 화면에서 "…" 로 잘립니다.
+    값을 바꿀 일이 있으면 index.html 의 8.8 도 같이 바꾸세요.
+    """
+    assert pitch_kit.MAX_LABEL_WIDTH == 8.6
+
+
 def test_shorten_never_returns_empty():
     """군더더기만으로 이뤄진 이름이라도 빈 이름표가 나오면 안 된다."""
     assert pitch_kit.shorten("KODEX 액티브").strip()

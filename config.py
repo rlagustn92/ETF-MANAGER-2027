@@ -17,6 +17,7 @@ app.py, HTML <title>, 저장 파일명, README 표기 등은 모두 아래 값�
 
 from __future__ import annotations
 
+import re
 from datetime import date, datetime, timedelta, timezone
 
 # =====================================================================
@@ -26,7 +27,7 @@ APP_YEAR: int = 2027
 
 # 프로그램 버전. 크든 작든 무언가 바꿀 때마다 맨 뒷자리를 1 올립니다
 # (1.0.0 -> 1.0.1 -> 1.0.2 ...). 화면 맨 위 제목 옆에 표시됩니다.
-APP_VERSION: str = "1.0.17"
+APP_VERSION: str = "1.0.18"
 
 
 def app_name() -> str:
@@ -199,9 +200,25 @@ NO_DATA_TEXT: str = "데이터 없음"
 NEEDS_CHECK_TEXT: str = "확인 필요"
 
 # 저장 파일명 접두사 (예: "ETF_MANAGER_<연도>_월배당공격형.json")
+# 전술명은 사용자가 아무거나 칠 수 있고, 불러온 JSON 에 들어 있던 값일 수도 있습니다.
+# 운영체제가 거부하는 이름이 만들어지면 "저장"을 눌러도 아무 일도 안 일어납니다.
+FILENAME_PART_MAX: int = 60          # 전체 파일명이 100자를 넘지 않도록
+
+
 def _safe_filename_part(tactic_name: str) -> str:
-    safe = "".join(c for c in tactic_name.strip() if c not in '<>:"/\\|?*').strip()
-    return safe.replace(" ", "_") or "tactic"
+    name = (tactic_name or "").strip()
+    # 1) 파일명에 못 쓰는 글자 제거.
+    #    제어문자(줄바꿈·탭 등)도 반드시 빼야 합니다 -- 윈도우/맥 모두 거부합니다.
+    #    (한 줄 입력칸에는 못 넣지만, 전술 JSON 을 손으로 고쳐 불러오면 들어옵니다)
+    safe = "".join(c for c in name if c not in '<>:"/\\|?*' and ord(c) >= 32)
+    safe = safe.replace(" ", "_").strip("_")
+    # 2) 길이 제한. 안 걸면 전술명이 긴 경우 파일명이 OS 한계(255)를 넘어 저장이 실패합니다.
+    if len(safe) > FILENAME_PART_MAX:
+        safe = safe[:FILENAME_PART_MAX].rstrip("_")
+    # 3) 점 처리. 점으로만 이뤄졌거나(".", "..") 점으로 끝나는 이름은 운영체제가 싫어하고,
+    #    "/" 를 지우고 나면 "전술/../../etc" 가 "전술....etc" 처럼 점이 뭉치기도 합니다.
+    safe = re.sub(r"\.{2,}", ".", safe).strip(".")
+    return safe or "tactic"
 
 
 def tactic_export_filename(tactic_name: str) -> str:

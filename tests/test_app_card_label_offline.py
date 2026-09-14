@@ -72,6 +72,36 @@ def test_clearing_the_label_returns_to_auto(market):
                                 sec.card_label) == "미배당다우"
 
 
+def test_label_input_caps_length(market):
+    """길이 제한이 없으면 이름표에 소설을 써넣을 수 있고, 카드에서는 "…" 로만 보여
+    무슨 종목인지 알 수 없게 됩니다."""
+    at, p = _run(market)
+    assert _label_input(at).proto.max_chars == 20
+
+
+def test_whitespace_inside_label_is_collapsed(market):
+    """불러온 전술 JSON 에 줄바꿈이 섞여 있으면 이름표에서 글자가 사라진 것처럼 보입니다."""
+    at, p = _run(market)
+    _label_input(at).set_value("내   주력\n둘째").run()
+    assert at.session_state["portfolio"].securities[0].card_label == "내 주력 둘째"
+
+
+def test_deleting_a_security_clears_its_label_state(market):
+    """지운 종목의 이름표 값이 세션에 남아 있으면, 같은 자리에 새로 담은 종목에
+    엉뚱한 이름표가 따라붙습니다."""
+    at, p = _run(market)
+    _label_input(at).set_value("내 주력").run()
+    target = at.session_state["portfolio"].securities[0]
+    key = f"lbl_{target.id}"
+    assert at.session_state[key] == "내 주력"
+
+    btn = next(b for b in at.button if b.label.startswith("🗑"))
+    btn.click().run()
+    assert not at.exception
+    assert key not in at.session_state
+    assert all(s.id != target.id for s in at.session_state["portfolio"].securities)
+
+
 def test_label_belongs_to_its_own_security(market):
     """한 종목 이름표를 고친 뒤 다른 종목을 열었을 때 그 값이 따라오면 안 된다."""
     at, p = _run(market)
