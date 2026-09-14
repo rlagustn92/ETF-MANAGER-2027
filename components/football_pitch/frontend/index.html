@@ -278,9 +278,36 @@ function taegeukSVG(cx, cy, r) {
          '<path d="' + taegeukRedPath(cx, cy, r) + '" fill="' + TAEGEUK_RED + '"/>';
 }
 
-function drawTaegeuk(ctx, cx, cy, r) {
-  ctx.beginPath(); ctx.arc(cx, cy, r + 1.6, 0, Math.PI * 2);
-  ctx.fillStyle = "#ffffff"; ctx.fill();
+/** 명단 왼쪽에 찍는 네모 태극기 (캡처 이미지 전용이라 canvas 판만 있습니다).
+ *  4괘는 이 크기(캡처에서 26x18px)에서 음/양 끊김이 안 보이므로 막대 3개로
+ *  단순화합니다. 막대 방향은 실제 태극기처럼 중심을 향한 선과 직각입니다. */
+function drawKRFlag(ctx, x, y, w, h) {
+  ctx.fillStyle = "#ffffff"; ctx.fillRect(x, y, w, h);
+  const cx = x + w / 2, cy = y + h / 2;
+  drawTaegeuk(ctx, cx, cy, h * 0.25, 0);
+
+  const L = h * 0.30, t = Math.max(0.8, h * 0.055), gap = t * 0.75;
+  const span = 3 * t + 2 * gap;
+  ctx.fillStyle = "#1a1a1a";
+  for (const [px, py] of [[0.23, 0.24], [0.77, 0.24], [0.23, 0.76], [0.77, 0.76]]) {
+    const gx = x + w * px, gy = y + h * py;
+    ctx.save();
+    ctx.translate(gx, gy);
+    ctx.rotate(Math.atan2(cy - gy, cx - gx));
+    for (let i = 0; i < 3; i++) ctx.fillRect(i * (t + gap) - span / 2, -L / 2, t, L);
+    ctx.restore();
+  }
+  ctx.lineWidth = 1; ctx.strokeStyle = "rgba(15,42,68,0.45)";
+  ctx.strokeRect(x, y, w, h);
+}
+
+function drawTaegeuk(ctx, cx, cy, r, ring) {
+  // ring = 유니폼 위에 얹을 때 필요한 흰 테두리 두께. 흰 바탕(태극기) 위에서는 0.
+  if (ring === undefined) ring = 1.6;
+  if (ring > 0) {
+    ctx.beginPath(); ctx.arc(cx, cy, r + ring, 0, Math.PI * 2);
+    ctx.fillStyle = "#ffffff"; ctx.fill();
+  }
   ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2);
   ctx.fillStyle = TAEGEUK_BLUE; ctx.fill();
   ctx.fillStyle = TAEGEUK_RED;
@@ -513,9 +540,9 @@ async function buildPitchCanvas() {
 
   // 아래에 붙일 요약/명단 높이를 미리 계산
   const stripH   = summary && summary.cells && summary.cells.length ? 52 * scale : 0;
-  const noteH    = (summary && summary.note) ? 17 * scale : 0;
-  const keyH     = (summary && summary.key_note) ? 16 * scale : 0;
-  const rowH     = 19 * scale;
+  const noteH    = (summary && summary.note) ? 19 * scale : 0;
+  const keyH     = (summary && summary.key_note) ? 18 * scale : 0;
+  const rowH     = 23 * scale;     // 글씨를 키운 만큼 줄 높이도 같이 키움
   const legendH  = legend.length ? (legend.length * rowH + 8 * scale) : 0;
   const footH    = footer ? 26 * scale : 0;
   const extra    = (stripH ? stripH + 9 * scale : 0) + noteH + keyH + legendH + footH;
@@ -614,14 +641,14 @@ async function buildPitchCanvas() {
 
   if (noteH) {
     ctx.textAlign = "center"; ctx.textBaseline = "middle";
-    ctx.fillStyle = "rgba(176,116,20,0.95)";
-    ctx.font = `${10 * scale}px ${FONT}`;
+    ctx.fillStyle = "rgba(176,116,20,1)";
+    ctx.font = `${11.5 * scale}px ${FONT}`;
     ctx.fillText(summary.note, W / 2, y + noteH / 2);
     y += noteH;
   }
   if (keyH) {
-    ctx.fillStyle = "rgba(15,42,68,0.50)";
-    ctx.font = `${10 * scale}px ${FONT}`;
+    ctx.fillStyle = "rgba(15,42,68,0.62)";
+    ctx.font = `${11 * scale}px ${FONT}`;
     ctx.fillText(summary.key_note, W / 2, y + keyH / 2);
     y += keyH;
   }
@@ -632,27 +659,26 @@ async function buildPitchCanvas() {
       // 표식 자리 폭은 미국/한국 상관없이 같게 잡아야 종목 이름이 세로로 줄 맞습니다.
       const slotW = 13 * scale;
       const swX = pad + 2 * scale;
+      // 어느 나라 상품인지 국기로 바로 보이게 합니다. 운용사(TIGER/KODEX)는
+      // 어차피 정식 이름 맨 앞에 그대로 나오므로 색 네모는 필요 없습니다(사용자 요청).
+      const fh = 9 * scale;
       if (item.us) {
-        const fh = 9 * scale;
-        // 명단 표식도 유니폼 가슴과 같은 성조기. 다만 여기는 더 작아서
-        // 줄 수/별 수를 한 단계 줄인 spec 을 씁니다.
+        // 명단은 커뮤니티에서 이미지가 줄어 보이는 일이 많아 한 단계 성긴 spec.
         drawUSFlag(ctx, swX, y + (rowH - fh) / 2, slotW, fh, FLAG_SPEC.tiny, 1 * scale);
       } else {
-        const sw = 10 * scale;
-        ctx.fillStyle = item.color;
-        roundRect(ctx, swX, y + (rowH - sw) / 2, sw, sw, 2 * scale);
-        ctx.fill();
+        drawKRFlag(ctx, swX, y + (rowH - fh) / 2, slotW, fh);
       }
 
       ctx.textBaseline = "middle";
-      ctx.font = `${11 * scale}px ${FONT}`;
-      ctx.fillStyle = "rgba(15,42,68,0.58)";
+      ctx.font = `${12.5 * scale}px ${FONT}`;
+      ctx.fillStyle = "rgba(15,42,68,0.82)";
       ctx.textAlign = "right";
       const amtW = ctx.measureText(item.amount).width;
       ctx.fillText(item.amount, W - pad - 2 * scale, y + rowH / 2);
 
       ctx.textAlign = "left";
-      ctx.fillStyle = "rgba(15,42,68,0.85)";
+      ctx.font = `${13 * scale}px ${FONT}`;
+      ctx.fillStyle = "rgba(15,42,68,0.95)";
       const nameX = swX + slotW + 6 * scale;
       const nameMax = (W - pad - 2 * scale) - amtW - 10 * scale - nameX;
       ctx.fillText(fitText(ctx, item.name, nameMax), nameX, y + rowH / 2);
