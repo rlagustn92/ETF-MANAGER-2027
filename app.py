@@ -589,12 +589,16 @@ with col_mid:
             "us": kit["style"] == "us",
         })
 
+    # 전술판 위 "📋 텍스트" 버튼이 복사할 글자. 아래 접힌 칸에 보여주는 것과 같은 값입니다.
+    _comment_text = comment_text(comp) if P.securities else ""
+
     result = football_pitch(players=players_payload, slots=pitch_grid.slot_meta(),
                             selected_id=st.session_state.selected_id, key="pitch", height=760,
                             aspect_ratio=config.PITCH_ASPECT_RATIO,
                             summary=capture_summary, legend=capture_legend,
                             footer=f"⚽ {config.app_name()} · {config.APP_PUBLIC_URL}",
-                            capture_filename=config.capture_image_filename(P.name))
+                            capture_filename=config.capture_image_filename(P.name),
+                            comment_text=_comment_text)
     if result:
         for sec_id, slot_id in (result.get("assignments") or {}).items():
             sec = P.get(sec_id)
@@ -614,14 +618,15 @@ with col_mid:
         st.info(f"살(BUY) 비율 합계 {comp.weight_total*100:.2f}% · 나머지 "
                 f"{comp.cash_weight*100:.2f}% 는 현금으로 남습니다.")
 
-    # ---- 📋 댓글용 텍스트 (사용자 요청) ---------------------------------------
+    # ---- 📋 텍스트 (사용자 요청) ----------------------------------------------
     # 네이버 댓글처럼 **이미지 첨부가 아예 안 되는 곳**이 많습니다. 📸 복사는
     # 글쓰기 창에 붙여넣을 수 있는 곳에서만 통해서, 글자로 옮길 길이 따로 필요합니다.
-    # st.code 는 오른쪽 위에 복사 버튼을 기본으로 달아 주므로 버튼을 새로 만들지 않습니다.
-    if P.securities:
-        with st.expander("📋 댓글에 붙여넣을 텍스트"):
-            st.code(comment_text(comp), language=None)
-            st.caption("오른쪽 위 복사 아이콘을 누르면 그대로 복사됩니다.")
+    # 복사는 전술판 위 "📋 텍스트" 버튼으로 한 번에 되고, 여기서는 **무엇이 복사되는지
+    # 눈으로 확인**할 수 있게 접어 둡니다(펼쳐야 보이는 형태 유지 -- 사용자 요청).
+    if _comment_text:
+        with st.expander("텍스트"):
+            st.code(_comment_text, language=None)
+            st.caption("전술판 위 “📋 텍스트” 를 누르면 이 내용이 그대로 복사됩니다.")
 
 # ---- 우 (Phase B): 선택 종목의 계산 결과 표시 --------------------------
 with col_right:

@@ -14,7 +14,11 @@
   #wrap { padding: 6px; }
   #topbar, #botbar { display: flex; align-items: center; justify-content: center; gap: 6px;
     font-size: 13px; font-weight: 700; letter-spacing: .02em; padding: 3px 0; position: relative; }
-  #topbar { color: #b23b3b; }
+  /* 오른쪽 버튼들은 absolute 라 공간을 차지하지 않습니다. padding 으로 자리를 비워 두지
+     않으면 가운데 문구가 버튼 밑으로 파고듭니다(실제로 겹쳤습니다).
+     좁은 화면에서는 문구를 "…" 로 줄여서 버튼을 가리지 않게 합니다. */
+  #topbar { color: #b23b3b; padding-right: 196px; }
+  #topbar .dir { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   #botbar { color: #1f6f3a; }
   #tools { position: absolute; right: 2px; top: 50%; transform: translateY(-50%);
     display: flex; gap: 4px; }
@@ -90,8 +94,10 @@
 </head>
 <body>
 <div id="wrap">
-  <div id="topbar">▲ 공격 방향 (상대 골문)
+  <div id="topbar"><span class="dir">▲ 공격 방향 (상대 골문)</span>
     <span id="tools">
+      <button id="textBtn" class="tbtn"
+        title="포트폴리오를 글자로 복사 (네이버 댓글처럼 이미지가 안 되는 곳에 붙여넣기)">📋 텍스트</button>
       <button id="captureBtn" class="tbtn"
         title="전술판 + 요약을 이미지로 클립보드에 복사 (게시판 글쓰기 창에 바로 Ctrl+V)">📸 복사</button>
       <button id="saveBtn" class="tbtn"
@@ -144,6 +150,7 @@ let summary = null;   // {cells:[{k,v}], note, key_note}
 let legend = [];      // [{name, amount, color, us}]
 let footer = "";
 let captureFilename = "";   // 💾 저장 시 파일 이름 (파이썬이 전술명·날짜로 만들어 내려줌)
+let commentText = "";       // 📋 텍스트 버튼이 복사할 글자 (app.comment_text)
 let selectedId = null;
 let nonce = 0;
 const pitch = document.getElementById("pitch");
@@ -805,6 +812,45 @@ async function captureAndSave() {
   }
 }
 
+/** 📋 텍스트 -- 포트폴리오를 글자로 클립보드에 복사.
+ *
+ *  네이버 댓글처럼 이미지 첨부가 아예 안 되는 곳에서 씁니다.
+ *  글자 복사는 이미지와 달리 execCommand 폴백이 잘 통해서, 클립보드 권한이 막힌
+ *  브라우저에서도 대부분 성공합니다.
+ */
+async function copyCommentText() {
+  const btn = document.getElementById("textBtn");
+  const original = btn.textContent;
+  if (!commentText) return;
+  btn.disabled = true;
+  try {
+    try {
+      await navigator.clipboard.writeText(commentText);
+    } catch (err) {
+      // 권한이 없는 브라우저: 화면 밖 textarea 를 만들어 옛 방식으로 복사
+      const ta = document.createElement("textarea");
+      ta.value = commentText;
+      ta.setAttribute("readonly", "");
+      ta.style.cssText = "position:absolute;left:-9999px;top:0";
+      document.body.appendChild(ta);
+      ta.select();
+      const ok = document.execCommand("copy");
+      ta.remove();
+      if (!ok) throw err;
+    }
+    btn.textContent = "✅ 복사됨";
+  } catch (e) {
+    console.error("텍스트 복사 실패:", e);
+    btn.textContent = "❌ 실패";
+  } finally {
+    setTimeout(() => { btn.textContent = original; btn.disabled = false; }, 1800);
+  }
+}
+
+document.getElementById("textBtn").addEventListener("click", (e) => {
+  e.stopPropagation();
+  copyCommentText();
+});
 document.getElementById("captureBtn").addEventListener("click", (e) => {
   e.stopPropagation();
   captureAndCopy();
@@ -839,6 +885,8 @@ Streamlit.onRender((args) => {
   legend = Array.isArray(args.legend) ? args.legend : [];
   footer = args.footer || "";
   captureFilename = args.capture_filename || "";
+  commentText = args.comment_text || "";
+  document.getElementById("textBtn").style.display = commentText ? "" : "none";
 
   // 레이아웃 실험용: 전술판 세로 길이(세로/가로 비율)와 컴팩트 폰트 모드
   const aspect = Number(args.aspect_ratio) || (96 / 72);

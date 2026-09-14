@@ -44,6 +44,7 @@ def football_pitch(
     legend: list[dict] | None = None,
     footer: str = "",
     capture_filename: str = "",
+    comment_text: str = "",
     key: str | None = None,
 ):
     """세로 전술판 컴포넌트.
@@ -68,6 +69,9 @@ def football_pitch(
     capture_filename 은 💾 저장 버튼이 내려받을 PNG 파일 이름입니다
     (config.capture_image_filename). 저장 **위치**는 지정할 수 없습니다 --
     브라우저 보안상 무조건 그 브라우저의 다운로드 폴더로 갑니다.
+
+    comment_text 는 📋 텍스트 버튼이 클립보드에 넣을 글자입니다(app.comment_text).
+    비어 있으면 그 버튼을 숨깁니다.
     """
     return _component_func(
         players=players,
@@ -80,6 +84,7 @@ def football_pitch(
         legend=legend or [],
         footer=footer,
         capture_filename=capture_filename,
+        comment_text=comment_text,
         key=key,
         default=None,
     )
