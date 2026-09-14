@@ -40,15 +40,29 @@ def football_pitch(
     height: int = 720,
     aspect_ratio: float = 96 / 72,
     compact: bool = False,
+    summary: dict | None = None,
+    legend: list[dict] | None = None,
+    footer: str = "",
     key: str | None = None,
 ):
     """세로 전술판 컴포넌트.
 
     players: [{ "id", "ticker", "display_name", "market"("US"|"KR"),
-                "weight_pct", "slot", "has_warning" }, ...]
+                "label",        # 이름표 글자 (pitch_kit.card_label 로 줄인 것)
+                "kit",          # 유니폼 색 (pitch_kit.kit_of)
+                "weight_pct",   # 등번호로 찍힘
+                "slot", "has_warning" }, ...]
     slots:   pitch_grid.slot_meta()  -> [{ "id","row","col","x","y","label","group" }, ...]
     aspect_ratio: 전술판 세로/가로 비율 (기본 96/72). 작을수록 짧고 납작해짐 -- 레이아웃 실험용.
     compact: True 면 카드/라벨 글씨를 살짝 축소 -- 레이아웃 실험용.
+
+    summary / legend / footer 는 **화면에는 안 나오고 📸 캡처 이미지에만** 구워집니다.
+    전술판만 캡처하면 "그래서 얼마 버는데?" 가 안 보여서 공유해도 감이 안 온다는
+    피드백에서 나온 기능입니다 (사용자 요청).
+        summary: {"cells": [{"k": 라벨, "v": 값}, ...], "note": 고지, "key_note": 범례 한 줄}
+        legend:  [{"name": 정식 종목명, "amount": "30% · 1,350만 · 월 5.6만",
+                   "color": 유니폼 색, "us": bool}, ...]
+        footer:  "⚽ ETF MANAGER 2027 · etfmanager2027.streamlit.app"
     """
     return _component_func(
         players=players,
@@ -57,6 +71,9 @@ def football_pitch(
         height=height,
         aspect_ratio=aspect_ratio,
         compact=compact,
+        summary=summary,
+        legend=legend or [],
+        footer=footer,
         key=key,
         default=None,
     )

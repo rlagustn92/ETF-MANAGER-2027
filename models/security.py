@@ -31,6 +31,11 @@ class Security:
     ticker: str                          # 예: "QQQ", "005930"
     name: str = ""                       # 정식 명칭 (예: "삼성전자")
     display_name: str = ""               # 아이콘 표시명 (짧게, 인수인계서 16)
+    # 전술판 유니폼 아래 이름표에 찍을 글자를 사용자가 직접 정한 경우.
+    # 비어 있으면 pitch_kit 이 정식 이름을 자동으로 줄여서 씁니다.
+    # 자동 축약은 단어 사전 기반이라 새로 상장한 ETF 는 못 줄일 수 있고, 줄인 결과가
+    # 마음에 안 들 수도 있어서 마지막 수단으로 직접 고칠 길을 열어 둡니다.
+    card_label: str = ""
     currency: str = "USD"                # "USD" | "KRW"
     asset_type: str = "ETF"              # "ETF" | "STOCK" (참고용, 점수 아님)
     id: str = field(default_factory=lambda: uuid.uuid4().hex[:12])
@@ -84,7 +89,8 @@ class Security:
     @staticmethod
     def from_dict(d: dict) -> "Security":
         allowed = {
-            "market", "ticker", "name", "display_name", "currency", "asset_type", "id",
+            "market", "ticker", "name", "display_name", "card_label",
+            "currency", "asset_type", "id",
             "slot", "default_position_group", "visual_x", "visual_y",
             "target_weight", "distribution_enabled", "distribution_method",
             "manual_ttm_per_share", "manual_price",

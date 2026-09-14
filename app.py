@@ -31,6 +31,7 @@ import streamlit as st
 
 import config
 import pitch_grid
+import pitch_kit
 import presets
 from components.buy_input import buy_input
 from components.football_pitch import football_pitch
@@ -95,6 +96,26 @@ def pct(x, digits: int = 2) -> str:
     if x is None:
         return config.NO_DATA_TEXT
     return f"{x:.{digits}f}%"
+
+
+def won_short(x) -> str:
+    """캡처 이미지처럼 자리가 좁은 곳에서 쓰는 짧은 금액 표기.
+
+    "₩45,000,000" 은 이미지 안에서 너무 길고 한눈에 안 읽힙니다.
+    한국에서 실제로 말하는 단위(만/억)로 줄입니다.
+        45,000,000 -> 4,500만     187,000 -> 18.7만     123,400,000 -> 1.23억
+    """
+    if x is None:
+        return config.NO_DATA_TEXT
+    v = float(x)
+    sign = "-" if v < 0 else ""
+    v = abs(v)
+    if v >= 100_000_000:
+        return f"{sign}{v / 100_000_000:,.2f}".rstrip("0").rstrip(".") + "억"
+    if v >= 10_000:
+        man = v / 10_000
+        return f"{sign}{man:,.0f}만" if man >= 100 else f"{sign}{man:,.1f}만"
+    return f"{sign}{v:,.0f}원"
 
 
 def native_amt(x, currency: str, usd_digits: int = 2) -> str:
@@ -363,6 +384,18 @@ with col_right:
             + f"{'한국' if sel.market == MARKET_KR else '미국'} · {sel.currency} · {sel.asset_type}"
         )
 
+        # 전술판 이름표. 한국 ETF 는 이름이 길어서 자동으로 줄여 쓰는데(pitch_kit),
+        # 단어 사전 기반이라 새로 상장한 상품은 못 줄이거나 결과가 어색할 수 있습니다.
+        # 그래서 직접 고칠 길을 열어 둡니다. 비우면 다시 자동으로 돌아갑니다.
+        # 정식 이름은 위 제목과 캡처 이미지의 종목 명단에 그대로 남습니다.
+        _auto_label = pitch_kit.card_label(sel.market, sel.ticker, sel.display_name)
+        _typed = st.text_input(
+            "전술판 이름표", value=sel.card_label, key=f"lbl_{sel.id}",
+            placeholder=_auto_label,
+            help="유니폼 아래에 찍히는 글자입니다. 비워두면 정식 이름을 자동으로 줄여서 씁니다.",
+        )
+        sel.card_label = (_typed or "").strip()
+
         slider_key, num_key = f"wsel_{sel.id}", f"wsel_num_{sel.id}"
         if slider_key not in st.session_state:
             st.session_state[slider_key] = round(sel.target_weight * 100, 2)
@@ -518,16 +551,54 @@ with summary_bar_slot:
 # ---- 중: 전술판 (세로, FM 풍 포지션 슬롯) -----------------------------
 with col_mid:
     warn_ids = {r.security.id for r in comp.rows if r.warnings}
+    # 카드 = 유니폼. 색(운용사 브랜드/성조기)과 줄인 이름은 pitch_kit 이 정합니다.
     players_payload = [{
         "id": s.id, "ticker": s.ticker, "display_name": s.display_name, "market": s.market,
+        "label": pitch_kit.card_label(s.market, s.ticker, s.display_name, s.card_label),
+        "kit": pitch_kit.kit_of(s.market, s.display_name),
         "weight_pct": s.target_weight * 100.0,
         "slot": s.slot,
         "has_warning": s.id in warn_ids,
     } for s in P.securities]
 
+    # ---- 📸 캡처 이미지에만 구워지는 부분 (화면에는 안 나옴) --------------------
+    # 전술판만 캡처하면 "그래서 얼마 버는데?" 가 안 보여서, 커뮤니티에 올려도
+    # 감이 안 온다는 피드백에서 나왔습니다. 이미지 한 장에 배치·비율·원금·분배금·
+    # 정식 종목명·기준일·주소가 전부 들어가게 합니다 (사용자 요청).
+    capture_summary = {
+        "cells": [
+            {"k": "총 원금", "v": won_short(comp.total_actual_investment_krw)},
+            # 월 분배금은 "이번 달 실제 입금액"이 아니라 연 합계 / 12 입니다.
+            # 분기배당 종목을 섞으면 달마다 들쭉날쭉하므로 '월평균'이라고 적습니다.
+            {"k": "월평균 분배금", "v": won_short(comp.monthly_distribution_krw)},
+            {"k": "연 분배금", "v": won_short(comp.annual_distribution_krw)},
+            {"k": "원금 대비", "v": pct(comp.income_yield_on_invested_pct)},
+        ],
+        # 이미지는 맥락 없이 혼자 돌아다니므로, 세전이라는 점과 기준일을 꼭 박습니다.
+        # (미국 15% 원천징수, 국내 15.4% 배당소득세를 실수령으로 오해하면 손해)
+        "note": f"※ 세전 · 최근 12개월 분배금 기준 · {config.today_local():%Y-%m-%d}",
+        "key_note": "유니폼 등번호 = 살 비율 · 흰 유니폼 = 미국 종목",
+    }
+    # 명단: 카드에는 이름을 줄여 쓰므로, 여기서 정식 명칭을 보증합니다.
+    capture_legend = []
+    for r in sorted(comp.rows, key=lambda r: -r.security.target_weight):
+        s = r.security
+        kit = pitch_kit.kit_of(s.market, s.display_name)
+        name = (f"{s.display_name} ({s.ticker})" if s.market == MARKET_KR
+                else (s.ticker or s.display_name))
+        capture_legend.append({
+            "name": name,
+            "amount": (f"{pct(s.target_weight * 100)} · {won_short(r.actual_investment_krw)}"
+                       f" · 월 {won_short(r.monthly_distribution_krw)}"),
+            "color": kit["dark"],
+            "us": kit["style"] == "us",
+        })
+
     result = football_pitch(players=players_payload, slots=pitch_grid.slot_meta(),
                             selected_id=st.session_state.selected_id, key="pitch", height=760,
-                            aspect_ratio=config.PITCH_ASPECT_RATIO)
+                            aspect_ratio=config.PITCH_ASPECT_RATIO,
+                            summary=capture_summary, legend=capture_legend,
+                            footer=f"⚽ {config.app_name()} · {config.APP_PUBLIC_URL}")
     if result:
         for sec_id, slot_id in (result.get("assignments") or {}).items():
             sec = P.get(sec_id)
@@ -632,7 +703,7 @@ with col_right:
             st.session_state.selected_id = None
             # 이 종목에 딸린 입력칸 상태도 같이 정리 (남아 있으면 다음 종목에 영향)
             for _k in (f"buy_{sel.id}", f"buy_nonce_{sel.id}",
-                       f"wsel_{sel.id}", f"wsel_num_{sel.id}"):
+                       f"wsel_{sel.id}", f"wsel_num_{sel.id}", f"lbl_{sel.id}"):
                 st.session_state.pop(_k, None)
             st.rerun()
 

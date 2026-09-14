@@ -52,6 +52,27 @@ def test_roundtrip_preserves_core_fields_and_slot():
     assert len({s.slot for s in q.securities}) == 3
 
 
+def test_roundtrip_preserves_custom_card_label():
+    """직접 고친 전술판 이름표는 저장/불러오기 후에도 남아야 합니다.
+
+    안 남으면 전술을 다시 열 때마다 자동 축약 이름으로 되돌아가서,
+    사용자가 매번 고쳐야 합니다.
+    """
+    p = Portfolio(name="이름표", initial_capital_krw=10_000_000)
+    p.add(Security(market="KR", ticker="458730", name="TIGER 미국배당다우존스",
+                   display_name="TIGER 미국배당다우존스", card_label="내 주력",
+                   currency="KRW", target_weight=0.5))
+    res = tactic_service.from_json(tactic_service.to_json(p))
+    assert res.ok is True
+    assert res.portfolio.securities[0].card_label == "내 주력"
+
+
+def test_old_tactic_file_without_card_label_still_loads():
+    """card_label 이 없던 시절에 저장한 파일도 그대로 열려야 합니다."""
+    sec = Security.from_dict({"market": "KR", "ticker": "005930", "display_name": "삼성전자"})
+    assert sec.card_label == ""
+
+
 def test_export_dict_has_app_year_positions_and_slot_keys():
     p = _sample_portfolio()
     d = p.to_dict()

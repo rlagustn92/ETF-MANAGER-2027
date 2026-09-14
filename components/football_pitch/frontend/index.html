@@ -38,7 +38,7 @@
   #svg { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
 
   .slot {
-    position: absolute; width: 15%; max-width: 92px; height: 7.6%; min-height: 40px;
+    position: absolute; width: 15%; max-width: 100px; height: 12.6%; min-height: 52px;
     transform: translate(-50%, -50%);
     border: 1.5px dashed var(--slot); border-radius: 9px;
     display: flex; align-items: center; justify-content: center;
@@ -47,39 +47,48 @@
   }
   .slot.hot { border-color: #ffcf33; border-style: solid; background: rgba(255,207,51,0.16); color: #fff; }
 
+  /* ---- 종목 카드 = 축구 유니폼 + 이름표 --------------------------------------
+     유니폼 색  = 운용사 브랜드 (pitch_kit.py 가 정해서 내려줍니다)
+     등번호     = 살(BUY) 비율.  "%" 를 같이 찍습니다 -- 축구를 모르는 사람은
+                 숫자만 있으면 그냥 등번호로 읽기 때문입니다(사용자 지적).
+     이름표     = 짧게 줄인 종목명. 유니폼 안에 넣으면 어깨·소매가 글씨 공간을
+                 절반이나 먹어서, 밖으로 빼야 글자 수가 유지됩니다.
+     ⚠ 성능: 그림자 blur 를 카드마다 걸면 스크롤할 때마다 다시 칠해져서 끊깁니다.
+        그래서 유니폼에는 아주 약한 drop-shadow 하나만 쓰고, 줄무늬 그라디언트나
+        이미지 파일은 쓰지 않습니다(모양·단색은 공짜입니다). */
   .card {
-    position: absolute; width: 15%; max-width: 92px; height: 7.6%; min-height: 40px;
+    position: absolute; width: 15%; max-width: 100px;
     transform: translate(-50%, -50%);
-    background: #f7f7f4; color: #14243a; border-radius: 9px; border: 2px solid #0d2f5e;
-    box-shadow: 0 3px 8px rgba(0,0,0,0.35);
-    display: flex; flex-direction: column; align-items: center; justify-content: center;
-    cursor: grab; overflow: hidden; text-align: center;
+    cursor: grab; text-align: center;
     transition: left .12s ease, top .12s ease;
   }
-  .card.dragging { cursor: grabbing; box-shadow: 0 10px 22px rgba(0,0,0,0.5); z-index: 60;
-    transition: none; }
-  .card.selected { border-color: #ffcf33; box-shadow: 0 0 0 3px #ffcf33, 0 3px 8px rgba(0,0,0,0.4); }
-  .card .name { font-weight: 700; font-size: 13.5px; line-height: 1.1; max-width: 96%;
-    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .card .wt { font-size: 12px; color: #33517a; margin-top: 1px; font-variant-numeric: tabular-nums; }
-  .card .mkt { position: absolute; top: 2px; left: 4px; font-size: 8.5px; color: #7d8ba3; }
-  .card .warn { position: absolute; top: 3px; right: 4px; width: 7px; height: 7px; border-radius: 50%;
-    background: #e23b3b; }
+  .card.dragging { cursor: grabbing; z-index: 60; transition: none; }
+  .card .shirt { width: 62%; margin: 0 auto; display: block;
+    filter: drop-shadow(0 2px 3px rgba(0,0,0,0.35)); }
+  .card.selected .shirt { filter: drop-shadow(0 0 0 #ffcf33) drop-shadow(0 0 3px #ffcf33); }
+  .card .tag {
+    margin-top: 2px; border-radius: 4px; padding: 1px 3px;
+    /* 10px = 안쪽 폭 84px 에 한글 9.1자분. pitch_kit.MAX_LABEL_WIDTH(8.6) 과 짝입니다.
+       둘 중 하나만 바꾸면 이름표가 "…" 로 잘리기 시작합니다. */
+    font-size: 10px; font-weight: 700; line-height: 1.34;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .card.selected .tag { box-shadow: 0 0 0 2px #ffcf33; }
+  .card .warn { position: absolute; top: -2px; right: 2px; width: 8px; height: 8px;
+    border-radius: 50%; background: #e23b3b; border: 1px solid #fff; }
   #hint { margin-top: 6px; font-size: 12px; color: #8a8a8a; text-align: center; }
 
-  /* 컴팩트 모드 (레이아웃 실험용) -- 카드/라벨 글씨만 살짝 축소, 배치 로직은 그대로 */
+  /* 컴팩트 모드 (레이아웃 실험용) -- 글씨만 살짝 축소, 배치 로직은 그대로 */
   body.compact #topbar, body.compact #botbar { font-size: 11.5px; }
   body.compact .slot { font-size: 9.5px; }
-  body.compact .card .name { font-size: 12px; }
-  body.compact .card .wt { font-size: 10.5px; }
-  body.compact .card .mkt { font-size: 7.5px; }
+  body.compact .card .tag { font-size: 9px; }
   body.compact #hint { font-size: 11px; }
 </style>
 </head>
 <body>
 <div id="wrap">
   <div id="topbar">▲ 공격 방향 (상대 골문)
-    <button id="captureBtn" title="전술판을 이미지로 클립보드에 복사">📸 캡처</button>
+    <button id="captureBtn" title="전술판 + 요약을 이미지로 클립보드에 복사">📸 캡처</button>
   </div>
   <div id="pitch">
     <svg id="svg" viewBox="0 0 1000 1400" preserveAspectRatio="none">
@@ -121,8 +130,11 @@ const Streamlit = {
   }),
 };
 
-let players = [];     // {id,ticker,display_name,market,weight_pct,slot,has_warning}
+let players = [];     // {id,ticker,display_name,label,market,kit,weight_pct,slot,has_warning}
 let slots = [];       // {id,row,col,x,y,label,group}
+let summary = null;   // {cells:[{k,v}], note, key_note}
+let legend = [];      // [{name, amount, color, us}]
+let footer = "";
 let selectedId = null;
 let nonce = 0;
 const pitch = document.getElementById("pitch");
@@ -157,6 +169,77 @@ function fmtPct(v) {
   if (v === null || v === undefined || isNaN(v)) return "–";
   return (Math.round(v * 100) / 100).toFixed(2).replace(/\.?0+$/, "") + "%";
 }
+/** 등번호용: 소수점 한 자리까지만, 끝의 .0 은 뗌 (30, 7.5) */
+function fmtNum(v) {
+  if (v === null || v === undefined || isNaN(v)) return "–";
+  const n = Math.round(v * 10) / 10;
+  return String(n);
+}
+
+// =====================================================================
+// 유니폼 도형 -- 화면(SVG)과 캡처(canvas)가 똑같은 좌표를 씁니다.
+// 좌표계는 가로 100 x 세로 118.
+// =====================================================================
+const SHIRT_PATH = "M34 6 L22 2 L2 22 L16 36 L24 30 L24 106 A4 4 0 0 0 28 110 " +
+                   "L72 110 A4 4 0 0 0 76 106 L76 30 L84 36 L98 22 L78 2 L66 6 " +
+                   "C62 14 56 17 50 17 C44 17 38 14 34 6 Z";
+const COLLAR_PATH = "M34 6 C38 14 44 17 50 17 C56 17 62 14 66 6 L70 8 " +
+                    "C65 19 58 22 50 22 C42 22 35 19 30 8 Z";
+const SHIRT_RATIO = 1.18;            // 세로/가로
+const US_RED = "#C8102E", US_NAVY = "#0A2B5C", US_BODY = "#F8F8F4";
+// 가슴 성조기 패치 (상반신 절반을 채우는 크기 -- 작아져도 미국인 게 바로 보이도록)
+const FLAG = { x: 27, y: 28, w: 46, h: 28 };
+
+/** 성조기: 흰 바탕 + 빨간 줄 4개 + 왼쪽 위 남색 캔턴. 별은 이 크기에서 뭉개져 안 씁니다. */
+function flagParts() {
+  const s = FLAG.h / 7, out = [];
+  for (let i = 0; i < 7; i += 2) out.push({ x: FLAG.x, y: FLAG.y + i * s, w: FLAG.w, h: s });
+  return { stripes: out, canton: { x: FLAG.x, y: FLAG.y, w: FLAG.w * 0.42, h: s * 4 } };
+}
+
+/** 화면용 유니폼 SVG 문자열. uid 는 clipPath id 충돌을 막기 위한 것. */
+function jerseySVG(kit, weightPct, uid) {
+  const num = fmtNum(weightPct);
+  let inner, numFill, brandTag = "";
+  if (kit.style === "us") {
+    const f = flagParts();
+    inner =
+      '<rect x="0" y="0" width="100" height="118" fill="' + US_BODY + '"/>' +
+      '<rect x="0" y="0" width="24" height="40" fill="' + US_RED + '"/>' +
+      '<rect x="76" y="0" width="24" height="40" fill="' + US_RED + '"/>' +
+      '<path d="' + COLLAR_PATH + '" fill="' + US_NAVY + '"/>' +
+      '<rect x="' + FLAG.x + '" y="' + FLAG.y + '" width="' + FLAG.w + '" height="' + FLAG.h + '" fill="#fff"/>' +
+      f.stripes.map(r => '<rect x="' + r.x + '" y="' + r.y + '" width="' + r.w +
+                         '" height="' + r.h + '" fill="' + US_RED + '"/>').join("") +
+      '<rect x="' + f.canton.x + '" y="' + f.canton.y + '" width="' + f.canton.w +
+        '" height="' + f.canton.h + '" fill="' + US_NAVY + '"/>' +
+      '<rect x="' + FLAG.x + '" y="' + FLAG.y + '" width="' + FLAG.w + '" height="' + FLAG.h +
+        '" fill="none" stroke="' + US_NAVY + '" stroke-width="1.6"/>';
+    numFill = US_NAVY;
+  } else {
+    inner = '<rect x="0" y="0" width="100" height="118" fill="' + kit.main + '"/>';
+    numFill = kit.text;
+    if (kit.brand) {
+      brandTag = '<text x="50" y="52" text-anchor="middle" font-size="13" font-weight="700" ' +
+                 'fill="' + kit.text + '" opacity="0.75">' + escapeHtml(kit.brand.slice(0, 2)) + '</text>';
+    }
+  }
+  return '<svg class="shirt" viewBox="0 0 100 118">' +
+    '<defs><clipPath id="jc' + uid + '"><path d="' + SHIRT_PATH + '"/></clipPath></defs>' +
+    '<g clip-path="url(#jc' + uid + ')">' + inner + '</g>' +
+    '<path d="' + SHIRT_PATH + '" fill="none" stroke="' + kit.dark + '" stroke-width="3"/>' +
+    brandTag +
+    '<text x="50" y="98" text-anchor="middle" font-weight="700" fill="' + numFill + '">' +
+      '<tspan font-size="30">' + escapeHtml(num) + '</tspan>' +
+      '<tspan font-size="15">%</tspan></text>' +
+    '</svg>';
+}
+
+function defaultKit(market) {
+  return market === "US"
+    ? { style: "us", brand: "", main: US_BODY, dark: US_NAVY, text: US_NAVY }
+    : { style: "solid", brand: "", main: "#8E99A6", dark: "#4A535C", text: "#FFFFFF" };
+}
 
 function render() {
   pitch.querySelectorAll(".slot, .card").forEach(el => el.remove());
@@ -171,6 +254,7 @@ function render() {
     pitch.appendChild(el);
   }
 
+  let uid = 0;
   for (const p of players) {
     const s = slotById(p.slot) || nearestSlot(0.5, 0.5);
     const el = document.createElement("div");
@@ -178,12 +262,11 @@ function render() {
     el.dataset.id = p.id;
     el.style.left = (s.x * 100) + "%";
     el.style.top = (s.y * 100) + "%";
-    const label = (p.market === "KR") ? (p.display_name || p.ticker) : (p.ticker || p.display_name);
     el.innerHTML =
-      '<span class="mkt">' + (p.market === "KR" ? "KR" : "US") + '</span>' +
+      jerseySVG(p.kit, p.weight_pct, uid++) +
       (p.has_warning ? '<span class="warn" title="확인 필요"></span>' : '') +
-      '<span class="name">' + escapeHtml(label) + '</span>' +
-      '<span class="wt">' + fmtPct(p.weight_pct) + '</span>';
+      '<div class="tag" style="background:' + p.kit.dark + ';color:#fff">' +
+        escapeHtml(p.label) + '</div>';
     attachDrag(el, p);
     pitch.appendChild(el);
   }
@@ -246,10 +329,18 @@ function attachDrag(el, p) {
   el.addEventListener("pointercancel", endDrag);
 }
 
-// ---- 캡처(스크린샷 아님): 현재 players/slots 상태를 그대로 canvas 에 다시 그려서
-// PNG로 만든 뒤 클립보드에 복사. html2canvas 같은 외부 라이브러리 없이, 이미 갖고 있는
-// SVG(라인)와 카드 좌표/텍스트 데이터를 그대로 재사용하므로 항상 실제 배치와 정확히
-// 일치합니다. ---------------------------------------------------------------
+// =====================================================================
+// 캡처(스크린샷 아님)
+// ---------------------------------------------------------------------
+// 현재 players/slots/summary 를 그대로 canvas 에 다시 그려서 PNG 로 만든 뒤
+// 클립보드에 복사합니다. html2canvas 같은 외부 라이브러리 없이, 이미 갖고 있는
+// SVG(라인)와 카드 좌표/텍스트 데이터를 재사용하므로 항상 실제 배치와 일치합니다.
+//
+// 전술판만 찍으면 "그래서 얼마 버는데?" 가 안 보여서, 커뮤니티에 올려도 감이
+// 안 온다는 피드백이 있었습니다. 그래서 아래를 함께 굽습니다(사용자 요청):
+//   요약 띠(총 원금/월평균 분배금/연 분배금/원금 대비) + 고지 + 종목 명단 + 주소
+// 종목 명단이 있어야 카드에 짧게 줄여 쓴 이름의 정식 명칭이 보증됩니다.
+// =====================================================================
 function roundRect(ctx, x, y, w, h, r) {
   ctx.beginPath();
   ctx.moveTo(x + r, y);
@@ -260,26 +351,107 @@ function roundRect(ctx, x, y, w, h, r) {
   ctx.closePath();
 }
 
+// ⚠️ 화면(CSS)과 **글자 하나까지 똑같은** 글꼴 목록이어야 합니다.
+// 예전에는 캡처 쪽만 "Segoe UI" 가 빠져 있어서, 영문·숫자가 맑은 고딕으로 잡히며
+// 화면보다 넓게 그려졌고, 화면에서는 멀쩡한 이름표가 캡처에서만 "…" 로 잘렸습니다.
+const FONT = '-apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans KR", ' +
+             '"Malgun Gothic", "Apple SD Gothic Neo", Roboto, sans-serif';
+
+/** canvas 에 유니폼 한 벌. (cx, topY) 기준, 폭 w. SVG 와 같은 도형입니다. */
+function drawJersey(ctx, cx, topY, w, kit, weightPct) {
+  const k = w / 100;
+  ctx.save();
+  ctx.translate(cx - w / 2, topY);
+  ctx.scale(k, k);
+
+  const shirt = new Path2D(SHIRT_PATH);
+  ctx.save();
+  ctx.clip(shirt);
+  let numFill;
+  if (kit.style === "us") {
+    ctx.fillStyle = US_BODY; ctx.fillRect(0, 0, 100, 118);
+    ctx.fillStyle = US_RED;  ctx.fillRect(0, 0, 24, 40); ctx.fillRect(76, 0, 24, 40);
+    ctx.fillStyle = US_NAVY; ctx.fill(new Path2D(COLLAR_PATH));
+    const f = flagParts();
+    ctx.fillStyle = "#fff"; ctx.fillRect(FLAG.x, FLAG.y, FLAG.w, FLAG.h);
+    ctx.fillStyle = US_RED;
+    for (const r of f.stripes) ctx.fillRect(r.x, r.y, r.w, r.h);
+    ctx.fillStyle = US_NAVY;
+    ctx.fillRect(f.canton.x, f.canton.y, f.canton.w, f.canton.h);
+    ctx.lineWidth = 1.6; ctx.strokeStyle = US_NAVY;
+    ctx.strokeRect(FLAG.x, FLAG.y, FLAG.w, FLAG.h);
+    numFill = US_NAVY;
+  } else {
+    ctx.fillStyle = kit.main; ctx.fillRect(0, 0, 100, 118);
+    numFill = kit.text;
+  }
+  ctx.restore();
+
+  ctx.lineWidth = 3; ctx.strokeStyle = kit.dark; ctx.stroke(shirt);
+
+  ctx.textAlign = "center"; ctx.textBaseline = "alphabetic";
+  if (kit.style !== "us" && kit.brand) {
+    ctx.globalAlpha = 0.75;
+    ctx.fillStyle = kit.text;
+    ctx.font = 'bold 13px ' + FONT;
+    ctx.fillText(kit.brand.slice(0, 2), 50, 52);
+    ctx.globalAlpha = 1;
+  }
+  // 등번호 + % : 둘을 합친 폭을 재서 가운데 정렬
+  const numTxt = fmtNum(weightPct);
+  ctx.font = 'bold 30px ' + FONT;
+  const wNum = ctx.measureText(numTxt).width;
+  ctx.font = 'bold 15px ' + FONT;
+  const wPct = ctx.measureText("%").width;
+  const startX = 50 - (wNum + wPct) / 2;
+  ctx.textAlign = "left";
+  ctx.fillStyle = numFill;
+  ctx.font = 'bold 30px ' + FONT;
+  ctx.fillText(numTxt, startX, 98);
+  ctx.font = 'bold 15px ' + FONT;
+  ctx.fillText("%", startX + wNum, 98);
+  ctx.textAlign = "center";
+
+  ctx.restore();
+}
+
+/** 폭에 안 들어가면 끝을 … 로 줄입니다. */
+function fitText(ctx, text, maxW) {
+  if (ctx.measureText(text).width <= maxW) return text;
+  let s = text;
+  while (s.length > 1 && ctx.measureText(s + "…").width > maxW) s = s.slice(0, -1);
+  return s + "…";
+}
+
 async function buildPitchCanvas() {
   const pr = pitch.getBoundingClientRect();
   const scale = 2;                       // 고해상도로 캡처
   const barH = 26;                       // 상/하단 바 높이(CSS px 기준)
+  const pad = 12 * scale;
   const W = Math.round(pr.width * scale);
   const barPx = Math.round(barH * scale);
   const pitchH = Math.round(pr.height * scale);
-  const H = barPx * 2 + pitchH;
+
+  // 아래에 붙일 요약/명단 높이를 미리 계산
+  const stripH   = summary && summary.cells && summary.cells.length ? 52 * scale : 0;
+  const noteH    = (summary && summary.note) ? 17 * scale : 0;
+  const keyH     = (summary && summary.key_note) ? 16 * scale : 0;
+  const rowH     = 19 * scale;
+  const legendH  = legend.length ? (legend.length * rowH + 8 * scale) : 0;
+  const footH    = footer ? 26 * scale : 0;
+  const extra    = (stripH ? stripH + 9 * scale : 0) + noteH + keyH + legendH + footH;
+  const H = barPx * 2 + pitchH + extra + (extra ? 8 * scale : 0);
 
   const canvas = document.createElement("canvas");
   canvas.width = W; canvas.height = H;
   const ctx = canvas.getContext("2d");
 
-  // 배경
   ctx.fillStyle = "#ffffff";
   ctx.fillRect(0, 0, W, H);
 
   // 상/하단 바 텍스트
   ctx.textAlign = "center"; ctx.textBaseline = "middle";
-  ctx.font = `bold ${13 * scale}px -apple-system, "Malgun Gothic", sans-serif`;
+  ctx.font = `bold ${13 * scale}px ${FONT}`;
   ctx.fillStyle = "#b23b3b";
   ctx.fillText("▲ 공격 방향 (상대 골문)", W / 2, barPx / 2);
   ctx.fillStyle = "#1f6f3a";
@@ -296,8 +468,7 @@ async function buildPitchCanvas() {
   // 라인(SVG)을 이미지로 변환해 그대로 그려넣기.
   // svg 의 stroke/fill 은 CSS 변수(var(--line))를 쓰는데, 이 SVG 를 문자열로 뽑아
   // 독립된 data URI 이미지로 불러오면 원본 문서의 CSS 변수에 접근할 수 없어
-  // stroke 가 전부 사라집니다(fill 은 암묵적으로 검정, stroke 는 암묵적으로 "없음"으로
-  // 처리되기 때문). 그래서 실제 계산된 색상값으로 미리 치환해서 내보냅니다.
+  // stroke 가 전부 사라집니다. 그래서 실제 계산된 색상값으로 미리 치환합니다.
   const svgEl = document.getElementById("svg");
   const lineColor = getComputedStyle(document.documentElement).getPropertyValue("--line").trim();
   let svgData = new XMLSerializer().serializeToString(svgEl);
@@ -309,29 +480,109 @@ async function buildPitchCanvas() {
   });
   ctx.drawImage(svgImg, 0, barPx, W, pitchH);
 
-  // 카드
-  const cw = W * 0.15, ch = pitchH * 0.076;
+  // ---- 유니폼 카드 ----
+  const cardW = W * 0.15;
+  const jerseyW = cardW * 0.62;
+  const jerseyH = jerseyW * SHIRT_RATIO;
+  const tagH = 15 * scale;
+  const totalH = jerseyH + 2 * scale + tagH;
   for (const p of players) {
     const s = slotById(p.slot) || nearestSlot(0.5, 0.5);
     const cx = s.x * W, cy = barPx + s.y * pitchH;
-    roundRect(ctx, cx - cw / 2, cy - ch / 2, cw, ch, 8 * scale);
-    ctx.fillStyle = "#f7f7f4"; ctx.fill();
-    ctx.lineWidth = 2 * scale; ctx.strokeStyle = "#0d2f5e"; ctx.stroke();
+    const topY = cy - totalH / 2;
+    drawJersey(ctx, cx, topY, jerseyW, p.kit, p.weight_pct);
 
-    const label = (p.market === "KR") ? (p.display_name || p.ticker) : (p.ticker || p.display_name);
-    ctx.fillStyle = "#14243a";
-    ctx.font = `bold ${11.5 * scale}px -apple-system, "Malgun Gothic", sans-serif`;
-    ctx.fillText(label, cx, cy - 5 * scale, cw - 6 * scale);
-    ctx.fillStyle = "#33517a";
-    ctx.font = `${10 * scale}px -apple-system, "Malgun Gothic", sans-serif`;
-    ctx.fillText(fmtPct(p.weight_pct), cx, cy + 9 * scale, cw - 6 * scale);
-
-    ctx.fillStyle = "#7d8ba3";
-    ctx.font = `${7 * scale}px -apple-system, sans-serif`;
-    ctx.textAlign = "left";
-    ctx.fillText(p.market === "KR" ? "KR" : "US", cx - cw / 2 + 4 * scale, cy - ch / 2 + 8 * scale);
-    ctx.textAlign = "center";
+    // 이름표
+    const tagY = topY + jerseyH + 2 * scale;
+    ctx.fillStyle = p.kit.dark;
+    roundRect(ctx, cx - cardW / 2, tagY, cardW, tagH, 4 * scale);
+    ctx.fill();
+    ctx.fillStyle = "#ffffff";
+    ctx.font = `bold ${10 * scale}px ${FONT}`;      // 화면 .tag 와 같은 크기
+    ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.fillText(fitText(ctx, p.label, cardW - 6 * scale), cx, tagY + tagH / 2 + 0.5 * scale);
   }
+
+  // ---- 아래 요약 ----
+  let y = barPx + pitchH + barPx + (extra ? 8 * scale : 0);
+
+  if (stripH) {
+    ctx.strokeStyle = "rgba(15,42,68,0.10)";
+    ctx.lineWidth = 1 * scale;
+    roundRect(ctx, pad, y, W - pad * 2, stripH, 10 * scale);
+    ctx.fillStyle = "rgba(15,42,68,0.022)"; ctx.fill(); ctx.stroke();
+
+    const cells = summary.cells;
+    const cw = (W - pad * 2) / cells.length;
+    cells.forEach((c, idx) => {
+      const cx = pad + cw * idx + cw / 2;
+      if (idx > 0) {
+        ctx.beginPath();
+        ctx.moveTo(pad + cw * idx, y + 8 * scale);
+        ctx.lineTo(pad + cw * idx, y + stripH - 8 * scale);
+        ctx.strokeStyle = "rgba(15,42,68,0.08)"; ctx.stroke();
+      }
+      ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      ctx.fillStyle = "rgba(15,42,68,0.55)";
+      ctx.font = `bold ${10 * scale}px ${FONT}`;
+      ctx.fillText(fitText(ctx, c.k, cw - 6 * scale), cx, y + stripH * 0.32);
+      ctx.fillStyle = "rgba(15,42,68,0.92)";
+      ctx.font = `bold ${15 * scale}px ${FONT}`;
+      ctx.fillText(fitText(ctx, c.v, cw - 6 * scale), cx, y + stripH * 0.68);
+    });
+    y += stripH + 9 * scale;
+  }
+
+  if (noteH) {
+    ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.fillStyle = "rgba(176,116,20,0.95)";
+    ctx.font = `${10 * scale}px ${FONT}`;
+    ctx.fillText(summary.note, W / 2, y + noteH / 2);
+    y += noteH;
+  }
+  if (keyH) {
+    ctx.fillStyle = "rgba(15,42,68,0.50)";
+    ctx.font = `${10 * scale}px ${FONT}`;
+    ctx.fillText(summary.key_note, W / 2, y + keyH / 2);
+    y += keyH;
+  }
+
+  if (legendH) {
+    y += 8 * scale;
+    for (const item of legend) {
+      const sw = 10 * scale;
+      ctx.fillStyle = item.us ? "#ffffff" : item.color;
+      roundRect(ctx, pad + 2 * scale, y + (rowH - sw) / 2, sw, sw, 2 * scale);
+      ctx.fill();
+      if (item.us) { ctx.lineWidth = 1 * scale; ctx.strokeStyle = US_NAVY; ctx.stroke(); }
+
+      ctx.textBaseline = "middle";
+      ctx.font = `${11 * scale}px ${FONT}`;
+      ctx.fillStyle = "rgba(15,42,68,0.58)";
+      ctx.textAlign = "right";
+      const amtW = ctx.measureText(item.amount).width;
+      ctx.fillText(item.amount, W - pad - 2 * scale, y + rowH / 2);
+
+      ctx.textAlign = "left";
+      ctx.fillStyle = "rgba(15,42,68,0.85)";
+      const nameX = pad + 2 * scale + sw + 6 * scale;
+      const nameMax = (W - pad - 2 * scale) - amtW - 10 * scale - nameX;
+      ctx.fillText(fitText(ctx, item.name, nameMax), nameX, y + rowH / 2);
+
+      ctx.beginPath();
+      ctx.moveTo(pad, y + rowH); ctx.lineTo(W - pad, y + rowH);
+      ctx.lineWidth = 1 * scale; ctx.strokeStyle = "rgba(15,42,68,0.06)"; ctx.stroke();
+      y += rowH;
+    }
+  }
+
+  if (footH) {
+    ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.fillStyle = "rgba(15,42,68,0.50)";
+    ctx.font = `${10 * scale}px ${FONT}`;
+    ctx.fillText(footer, W / 2, y + footH / 2 + 2 * scale);
+  }
+
   return canvas;
 }
 
@@ -378,11 +629,18 @@ Streamlit.onRender((args) => {
     ticker: p.ticker || "",
     display_name: p.display_name || "",
     market: p.market || "US",
+    // 이름표 글자. 파이썬(pitch_kit.py)이 줄여서 내려줍니다.
+    label: p.label || p.display_name || p.ticker || "",
+    kit: p.kit || defaultKit(p.market || "US"),
     weight_pct: (p.weight_pct === null || p.weight_pct === undefined) ? null : Number(p.weight_pct),
     slot: String(p.slot || ""),
     has_warning: !!p.has_warning,
   }));
   selectedId = (args.selected_id === undefined) ? selectedId : args.selected_id;
+
+  summary = args.summary || null;
+  legend = Array.isArray(args.legend) ? args.legend : [];
+  footer = args.footer || "";
 
   // 레이아웃 실험용: 전술판 세로 길이(세로/가로 비율)와 컴팩트 폰트 모드
   const aspect = Number(args.aspect_ratio) || (96 / 72);
