@@ -572,7 +572,8 @@ with col_mid:
         # 이미지는 맥락 없이 혼자 돌아다니므로, 세전이라는 점과 기준일을 꼭 박습니다.
         # (미국 15% 원천징수, 국내 15.4% 배당소득세를 실수령으로 오해하면 손해)
         "note": f"※ 세전 · 최근 12개월 분배금 기준 · {config.today_local():%Y-%m-%d}",
-        "key_note": "유니폼 등번호 = 살 비율 · 흰 유니폼 = 미국 종목",
+        # "등번호"는 축구를 아는 사람에게만 통하는 말이라 풀어 썼습니다(사용자 요청).
+        "key_note": "유니폼 숫자 = 그 종목을 몇 % 담았는지 · 흰 유니폼 = 미국 종목",
     }
     # 명단: 카드에는 이름을 줄여 쓰므로, 여기서 정식 명칭을 보증합니다.
     capture_legend = []
@@ -894,7 +895,9 @@ with st.expander("📈 예전부터 해봤다면? (그냥 사서 계속 갖기)"
             if r.include_distributions:
                 h6.write(f"분배금 누적(현금): {won(r.distributions_cash_krw)}")
             btdf = pd.DataFrame([{
-                "종목": x.ticker,
+                # 위 "어떻게 살까?" 표와 같은 규칙. 한국 종목은 티커가 종목코드라
+                # 그대로 쓰면 "458730" 처럼 떠서 뭘 백테스트한 건지 알 수가 없습니다.
+                "종목": x.display_name if x.market == MARKET_KR else x.ticker,
                 "살(BUY) 비율": f"{x.target_weight*100:.2f}%",
                 "매수가": f"{native_amt(x.buy_price_native, x.currency)} {x.currency}",
                 "살 때 환율": (f"{x.buy_fx:,.2f}" if x.buy_fx else "–"),

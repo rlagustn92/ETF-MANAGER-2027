@@ -48,6 +48,9 @@ LISTING_TOLERANCE_DAYS = 10
 @dataclass
 class BacktestRow:
     ticker: str
+    # 화면에 찍을 이름. 한국 종목은 티커가 종목코드(예: "458730")라서, 이게 없으면
+    # 백테스트 표에 "TIGER 미국배당다우존스" 대신 "458730" 이 뜹니다(실제로 그랬습니다).
+    display_name: str
     market: str
     currency: str
     target_weight: float
@@ -233,7 +236,8 @@ def run_backtest(
         total_dist_cash += dist_cash
         total_invested += invested
         rows.append(BacktestRow(
-            ticker=sec.ticker, market=sec.market, currency=sec.currency, target_weight=weight,
+            ticker=sec.ticker, display_name=(sec.display_name or sec.name or sec.ticker),
+            market=sec.market, currency=sec.currency, target_weight=weight,
             buy_price_native=buy_price_native, buy_fx=buy_fx, buy_price_krw=buy_price_krw,
             shares=shares, final_price_native=final_price_native, final_fx=final_fx,
             invested_krw=invested, final_value_krw=final_value_krw,
