@@ -65,6 +65,24 @@ class Preset:
     def total_weight_pct(self) -> float:
         return sum(i.weight_pct for i in self.items)
 
+    def chip(self) -> str:
+        """버튼 아래에 붙는 한 줄. **누르기 전에** 뭘 받게 되는지 알려줍니다.
+
+        왜 "월 ○○만원" 을 여기 안 적나
+        -------------------------------
+        월 분배금은 지금 시세와 분배 이력으로 계산해야 나오는 값이라, 버튼에 미리
+        박아두려면 숫자를 코드에 적어둬야 합니다. 그 숫자는 **반드시 낡습니다.**
+        틀린 금액을 버튼에 적어두느니 안 적는 게 낫습니다.
+
+        대신 지금 확실히 아는 두 가지를 적습니다 -- 종목 수와 **시드**.
+        시드가 특히 중요합니다. 예시를 누르면 내 시드까지 바뀌는데, 지금은 그걸
+        누르고 나서야 알게 됩니다.
+        """
+        if not self.items:
+            return "담은 종목을 모두 비웁니다"
+        from formatting import won_short
+        return f"{len(self.items)}종목 · 시드 {won_short(self.capital_krw)}"
+
 
 STABLE = Preset(
     key="stable",

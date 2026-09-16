@@ -1,0 +1,390 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<title>table capture</title>
+<style>
+  :root { --ink: 15, 42, 68; }
+  html, body { margin: 0; padding: 0; background: transparent; }
+  #bar {
+    display: flex; gap: 6px; justify-content: flex-end; align-items: center;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans KR",
+                 "Malgun Gothic", "Apple SD Gothic Neo", Roboto, sans-serif;
+  }
+  .tbtn {
+    font: inherit; font-size: 12.5px; font-weight: 600;
+    color: rgba(var(--ink), 0.72);
+    background: #fff; border: 1px solid rgba(var(--ink), 0.14);
+    border-radius: 8px; padding: 5px 11px; cursor: pointer; white-space: nowrap;
+  }
+  .tbtn:hover { background: rgba(var(--ink), 0.05); }
+  .tbtn:disabled { opacity: .6; cursor: default; }
+  .tbtn:focus-visible { outline: 2px solid #1F6B47; outline-offset: 2px; }
+</style>
+</head>
+<body>
+<div id="bar">
+  <button id="copyBtn" class="tbtn"
+    title="이 표를 이미지로 클립보드에 복사 (글쓰기 창에 바로 Ctrl+V)">📸 복사</button>
+  <button id="saveBtn" class="tbtn"
+    title="PNG 파일로 내려받기 (브라우저 다운로드 폴더에 저장됩니다)">💾 저장</button>
+</div>
+
+<script>
+/* =====================================================================
+   components/table_capture  --  표를 "공유할 수 있는 그림" 으로
+
+   왜 화면을 찍지 않고 다시 그리나
+   -------------------------------
+   화면을 그대로 찍으려면 외부 라이브러리(html2canvas 등)를 얹거나 부모 문서를
+   들여다봐야 합니다. 둘 다 앱 전체가 그 라이브러리에 묶이고, Streamlit 이
+   화면 구조를 바꾸면 조용히 깨집니다.
+
+   전술판(football_pitch)이 이미 **캔버스에 직접 그려서** 이미지를 만들고 있고,
+   그 방식이 잘 돌고 있습니다. 같은 방식을 씁니다. 대신 여기서는 표 하나를 받아
+   그리므로, 비교표·분배금 달력·백테스트 결과가 **같은 컴포넌트를 나눠 씁니다.**
+
+   그리고 화면을 찍는 것보다 결과가 낫습니다 -- 버튼이나 스크롤바 같은
+   화면 부속이 안 들어가고, 공유용으로 여백과 글자 크기를 따로 잡을 수 있습니다.
+   ===================================================================== */
+
+function _send(type, data) {
+  window.parent.postMessage(Object.assign({ isStreamlitMessage: true, type: type }, data), "*");
+}
+const Streamlit = {
+  RENDER_EVENT: "streamlit:render",
+  ready: () => _send("streamlit:componentReady", { apiVersion: 1 }),
+  setFrameHeight: (h) => _send("streamlit:setFrameHeight", { height: h }),
+  onRender: (cb) => window.addEventListener("message", (e) => {
+    if (e.data && e.data.type === Streamlit.RENDER_EVENT) cb(e.data.args || {});
+  }),
+};
+
+/* 글꼴은 전술판 캡처와 **같은 목록**이어야 합니다. 다르게 두면 같은 앱에서 나온
+   두 그림의 글자 모양이 달라 보입니다. (전술판에서 실제로 겪은 문제입니다) */
+const FONT = '-apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans KR", ' +
+             '"Malgun Gothic", "Apple SD Gothic Neo", Roboto, sans-serif';
+
+const INK = "rgba(15,42,68,0.92)";
+const INK2 = "rgba(15,42,68,0.66)";
+const INK3 = "rgba(15,42,68,0.48)";
+const HAIR = "rgba(15,42,68,0.12)";
+const TINT = "rgba(15,42,68,0.035)";
+const GREEN = "#1F6B47";
+
+/* sections: [{heading, columns, rows}, ...]
+   표를 여러 개 담을 수 있어야 합니다 -- 백테스트는 "요약 + 종목별" 두 덩어리라,
+   요약만 담으면 정작 무엇을 담았는지가 빠진 그림이 됩니다. */
+let cfg = { title: "", subtitle: "", sections: [], notes: [], footer: "",
+            filename: "etf-manager.png" };
+
+function roundRect(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r);
+  ctx.arcTo(x, y, x + w, y, r);
+  ctx.closePath();
+}
+
+/** 칸보다 긴 글자는 "…" 로 줄입니다. 잘려 나가면 무슨 종목인지 알 수가 없습니다. */
+function fitText(ctx, text, maxW) {
+  const s = String(text == null ? "" : text);
+  if (ctx.measureText(s).width <= maxW) return s;
+  let lo = 0, hi = s.length;
+  while (lo < hi) {
+    const mid = Math.ceil((lo + hi) / 2);
+    if (ctx.measureText(s.slice(0, mid) + "…").width <= maxW) lo = mid;
+    else hi = mid - 1;
+  }
+  return s.slice(0, lo) + "…";
+}
+
+/** 줄바꿈이 필요한 안내 문구를 칸 폭에 맞춰 여러 줄로 자릅니다. */
+function wrapLines(ctx, text, maxW) {
+  const words = String(text || "").split(/(\s+)/);
+  const out = [];
+  let line = "";
+  for (const w of words) {
+    const next = line + w;
+    if (ctx.measureText(next).width > maxW && line.trim()) {
+      out.push(line.trimEnd());
+      line = w.trimStart();
+    } else {
+      line = next;
+    }
+  }
+  if (line.trim()) out.push(line.trimEnd());
+  return out.length ? out : [""];
+}
+
+const PAD = 28;
+const ROW_H = 46;
+const HEAD_H = 54;
+const HEADING_H = 34;
+
+/** 칸이 많은 표는 좁은 그림에 우겨넣으면 글자가 다 "…" 가 됩니다. 폭을 넓힙니다. */
+function designWidth() {
+  const most = Math.max(1, ...cfg.sections.map((s) => (s.columns || []).length));
+  if (most >= 9) return 1640;
+  if (most >= 7) return 1420;
+  if (most >= 5) return 1220;
+  return 1000;
+}
+
+/** 한 표의 칸 위치/폭. 첫 칸(이름)은 넓게, 나머지는 똑같이 나눕니다.
+ *
+ *  그림 폭은 **가장 칸이 많은 표**에 맞춰 잡습니다. 그 폭을 칸 적은 표에까지
+ *  그대로 늘리면 "결과" 한 칸이 1000px 을 차지해 우스워지므로, 표마다 제 폭을
+ *  따로 잡고 남는 자리는 비워둡니다. */
+function layout(section, innerW) {
+  const cols = Math.max(1, (section.columns || []).length);
+  const tableW = Math.min(innerW, cols <= 3 ? 944 : innerW);
+  const firstRatio = cols >= 5 ? 0.24 : 0.30;
+  const firstW = cols > 1 ? Math.round(tableW * firstRatio) : tableW;
+  const restW = cols > 1 ? Math.round((tableW - firstW) / (cols - 1)) : 0;
+  const colX = [PAD];
+  for (let i = 1; i < cols; i++) colX.push(PAD + firstW + restW * (i - 1));
+  return { cols, tableW, colX, colW: (i) => (i === 0 ? firstW : restW) };
+}
+
+function drawSection(ctx, section, top, innerW) {
+  const { cols, tableW, colX, colW } = layout(section, innerW);
+  const rows = section.rows || [];
+  let y = top;
+
+  if (section.heading) {
+    ctx.fillStyle = INK2;
+    ctx.font = `700 16px ${FONT}`;
+    ctx.textAlign = "left";
+    ctx.fillText(section.heading, PAD, y + 14);
+    y += HEADING_H;
+  }
+
+  const tableTop = y;
+  const tableH = HEAD_H + ROW_H * rows.length;
+
+  // 지금 보고 있는 쪽(두 번째 칸)에 옅은 바탕 -- 화면과 같은 규칙.
+  // 칸이 셋일 때만입니다(= 좌우 비교표). 칸이 많은 표에서는 뜻이 없습니다.
+  if (cols === 3) {
+    ctx.fillStyle = TINT;
+    ctx.fillRect(colX[1], tableTop, colW(1), tableH);
+  }
+
+  ctx.fillStyle = "rgba(15,42,68,0.028)";
+  ctx.fillRect(PAD, tableTop, tableW, HEAD_H);
+  ctx.textAlign = "left";
+  for (let i = 0; i < cols; i++) {
+    const head = (section.columns || [])[i] || "";
+    if (!head) continue;
+    ctx.fillStyle = INK;
+    ctx.font = `700 ${cols >= 5 ? 14 : 16}px ${FONT}`;
+    ctx.fillText(fitText(ctx, head, colW(i) - 20), colX[i] + 12, tableTop + HEAD_H / 2);
+  }
+
+  const valueFs = cols >= 5 ? 14 : 16;
+  rows.forEach((row, ri) => {
+    const rowY = tableTop + HEAD_H + ROW_H * ri;
+    const cells = row.cells || [];
+    for (let i = 0; i < cols; i++) {
+      const c = cells[i] || {};
+      const cx = colX[i] + 12;
+      const maxW = colW(i) - 20;
+      const hasBar = typeof c.bar === "number";
+      const textY = rowY + (hasBar ? ROW_H / 2 - 6 : ROW_H / 2);
+
+      ctx.textAlign = "left";
+      if (i === 0) {
+        ctx.fillStyle = INK2;
+        ctx.font = `600 ${valueFs - 2}px ${FONT}`;
+      } else if (c.win) {
+        ctx.fillStyle = GREEN;
+        ctx.font = `700 ${valueFs}px ${FONT}`;
+      } else {
+        ctx.fillStyle = c.dim ? INK3 : INK;
+        ctx.font = `600 ${valueFs}px ${FONT}`;
+      }
+      ctx.fillText(fitText(ctx, c.t, maxW), cx, textY);
+
+      if (hasBar) {
+        const barW = Math.min(maxW, 170);
+        const barY = rowY + ROW_H / 2 + 9;
+        ctx.fillStyle = "rgba(15,42,68,0.07)";
+        roundRect(ctx, cx, barY, barW, 3, 1.5); ctx.fill();
+        ctx.fillStyle = c.win ? GREEN : "rgba(15,42,68,0.22)";
+        roundRect(ctx, cx, barY, Math.max(1, barW * c.bar / 100), 3, 1.5); ctx.fill();
+      }
+    }
+    if (ri < rows.length - 1) {
+      ctx.strokeStyle = row.sep ? "rgba(15,42,68,0.22)" : HAIR;
+      ctx.lineWidth = row.sep ? 1.4 : 1;
+      ctx.beginPath();
+      ctx.moveTo(PAD, rowY + ROW_H + 0.5);
+      ctx.lineTo(PAD + tableW, rowY + ROW_H + 0.5);
+      ctx.stroke();
+    }
+  });
+
+  ctx.strokeStyle = HAIR;
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(PAD, tableTop + HEAD_H + 0.5);
+  ctx.lineTo(PAD + tableW, tableTop + HEAD_H + 0.5);
+  ctx.stroke();
+  roundRect(ctx, PAD + 0.5, tableTop + 0.5, tableW - 1, tableH - 1, 10);
+  ctx.stroke();
+
+  return tableTop + tableH;
+}
+
+function sectionHeight(section) {
+  return (section.heading ? HEADING_H : 0) + HEAD_H + ROW_H * (section.rows || []).length;
+}
+
+function buildCanvas() {
+  const S = 2;                       // 2배로 그려서 글자가 또렷하게
+  const W = designWidth();
+  const innerW = W - PAD * 2;
+
+  // 높이를 먼저 재야 캔버스를 만들 수 있어서, 글자 재기용 캔버스를 잠깐 씁니다.
+  const meas = document.createElement("canvas").getContext("2d");
+  meas.font = `13px ${FONT}`;
+  const noteLines = [];
+  for (const n of cfg.notes || []) {
+    for (const line of wrapLines(meas, n, innerW)) noteLines.push(line);
+  }
+
+  let H = PAD;
+  H += cfg.title ? 40 : 0;
+  H += cfg.subtitle ? 26 : 0;
+  H += 10;
+  cfg.sections.forEach((s, i) => { H += sectionHeight(s) + (i ? 22 : 0); });
+  H += noteLines.length ? 14 + noteLines.length * 22 : 0;
+  H += cfg.footer ? 34 : 0;
+  H += PAD;
+
+  const canvas = document.createElement("canvas");
+  canvas.width = W * S;
+  canvas.height = H * S;
+  const ctx = canvas.getContext("2d");
+  ctx.scale(S, S);
+  ctx.textBaseline = "middle";
+
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(0, 0, W, H);
+
+  let y = PAD;
+  if (cfg.title) {
+    ctx.fillStyle = INK;
+    ctx.font = `700 25px ${FONT}`;
+    ctx.textAlign = "left";
+    ctx.fillText(cfg.title, PAD, y + 15);
+    y += 40;
+  }
+  if (cfg.subtitle) {
+    ctx.fillStyle = INK3;
+    ctx.font = `14px ${FONT}`;
+    ctx.textAlign = "left";
+    ctx.fillText(cfg.subtitle, PAD, y + 9);
+    y += 26;
+  }
+  y += 10;
+
+  cfg.sections.forEach((s, i) => {
+    y = drawSection(ctx, s, y + (i ? 22 : 0), innerW);
+  });
+
+  if (noteLines.length) {
+    y += 14;
+    ctx.fillStyle = INK3;
+    ctx.font = `13px ${FONT}`;
+    ctx.textAlign = "left";
+    for (const line of noteLines) {
+      ctx.fillText(line, PAD, y + 8);
+      y += 22;
+    }
+  }
+
+  if (cfg.footer) {
+    y += 14;
+    ctx.fillStyle = INK3;
+    ctx.font = `600 13px ${FONT}`;
+    ctx.textAlign = "left";
+    ctx.fillText(cfg.footer, PAD, y + 8);
+  }
+
+  return canvas;
+}
+
+function toBlob(canvas) {
+  return new Promise((resolve) => canvas.toBlob(resolve, "image/png"));
+}
+
+async function withBusy(btn, label, fn) {
+  const original = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = label;
+  try {
+    btn.textContent = await fn();
+  } catch (e) {
+    btn.textContent = "실패: " + (e && e.message ? e.message : e);
+  } finally {
+    setTimeout(() => { btn.textContent = original; btn.disabled = false; }, 1800);
+  }
+}
+
+async function copyImage() {
+  await withBusy(document.getElementById("copyBtn"), "만드는 중…", async () => {
+    const blob = await toBlob(buildCanvas());
+    if (!blob) throw new Error("이미지 생성 실패");
+    try {
+      await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
+      return "✅ 복사됨";
+    } catch (err) {
+      // 클립보드 권한이 없는 브라우저 -> 새 탭에 열어 직접 저장하게 합니다.
+      window.open(URL.createObjectURL(blob), "_blank");
+      return "새 탭에 열림";
+    }
+  });
+}
+
+async function saveImage() {
+  await withBusy(document.getElementById("saveBtn"), "저장 중…", async () => {
+    const blob = await toBlob(buildCanvas());
+    if (!blob) throw new Error("이미지 생성 실패");
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    if (typeof a.download === "undefined") {
+      window.open(url, "_blank");          // 구형 iOS: 길게 눌러 저장
+      return "새 탭에 열림";
+    }
+    a.href = url;
+    a.download = cfg.filename || "etf-manager.png";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 4000);
+    return "✅ 저장됨";
+  });
+}
+
+document.getElementById("copyBtn").addEventListener("click", copyImage);
+document.getElementById("saveBtn").addEventListener("click", saveImage);
+
+Streamlit.onRender((args) => {
+  cfg = {
+    title: args.title || "",
+    subtitle: args.subtitle || "",
+    sections: Array.isArray(args.sections) ? args.sections : [],
+    notes: Array.isArray(args.notes) ? args.notes : [],
+    footer: args.footer || "",
+    filename: args.filename || "etf-manager.png",
+  };
+  Streamlit.setFrameHeight(document.getElementById("bar").scrollHeight + 4);
+});
+
+Streamlit.ready();
+</script>
+</body>
+</html>

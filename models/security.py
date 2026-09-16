@@ -14,6 +14,13 @@ import uuid
 from dataclasses import dataclass, field, asdict
 
 import pitch_grid
+from models import numbers
+
+# 목표비중(비율)의 상한. 1.0 == 100%.
+# UI 로는 100% 를 넘길 수 없지만 전술 JSON 에는 무엇이든 적을 수 있습니다.
+# 1e300 같은 값을 그대로 두면 "시드 x 비중" 이 무한대가 되고, 그 무한대가
+# math.floor() 까지 흘러가서 앱이 죽습니다. 넉넉히 두되 무한대는 막습니다.
+MAX_TARGET_WEIGHT = 100.0   # = 10,000%
 
 # market 값
 MARKET_US = "US"
@@ -64,6 +71,14 @@ class Security:
             self.display_name = self.name or self.ticker
         if not self.name:
             self.name = self.display_name or self.ticker
+        # ---- 숫자 안전망 -------------------------------------------------
+        # 종목이 만들어지는 **모든 길**(JSON 불러오기, 예시 구성, 코드에서 직접 생성)이
+        # 여기를 지나갑니다. 그래서 이상한 값을 막는 마지막 자리로 삼습니다.
+        # 사용자에게 무엇이 잘못됐는지 알리는 일은 Portfolio.load() 가 따로 합니다.
+        self.target_weight = numbers.safe_float(
+            self.target_weight, default=0.0, minimum=0.0, maximum=MAX_TARGET_WEIGHT)
+        self.manual_ttm_per_share = _optional_amount(self.manual_ttm_per_share)
+        self.manual_price = _optional_amount(self.manual_price)
         self.visual_x = _clamp01(self.visual_x)
         self.visual_y = _clamp01(self.visual_y)
         # slot 이 지정돼 있으면 좌표/그룹을 슬롯 기준으로 정규화
@@ -109,8 +124,22 @@ class Security:
 
 
 def _clamp01(v: float) -> float:
-    try:
-        v = float(v)
-    except (TypeError, ValueError):
-        return 0.5
-    return max(0.0, min(1.0, v))
+    """0~1 좌표. 숫자가 아니거나 NaN 이면 전술판 한가운데(0.5)로 둡니다.
+
+    NaN 을 그냥 두면 `min(1.0, nan)` 이 1.0 을 돌려줘서 (NaN 비교는 전부 False)
+    종목이 슬그머니 구석으로 붙습니다. safe_float 이 먼저 걸러줍니다.
+    """
+    return numbers.safe_float(v, default=0.5, minimum=0.0, maximum=1.0)
+
+
+def _optional_amount(v: float | None) -> float | None:
+    """'직접 입력' 값들. 비워둔 것(None)은 그대로 두고, 이상한 값만 지웁니다.
+
+    0 으로 바꾸지 않고 None 으로 되돌리는 이유: 이 값들이 있으면 자동 조회 대신
+    쓰이기 때문입니다. 0 을 넣으면 "분배금 0원짜리 종목"이 되어 조용히 틀립니다.
+    """
+    if v is None:
+        return None
+    if not numbers.is_finite_number(v):
+        return None
+    return max(0.0, float(v))

@@ -27,7 +27,7 @@ APP_YEAR: int = 2027
 
 # 프로그램 버전. 크든 작든 무언가 바꿀 때마다 맨 뒷자리를 1 올립니다
 # (1.0.0 -> 1.0.1 -> 1.0.2 ...). 화면 맨 위 제목 옆에 표시됩니다.
-APP_VERSION: str = "1.0.24"
+APP_VERSION: str = "1.0.39"
 
 
 def app_name() -> str:
@@ -222,7 +222,25 @@ def _safe_filename_part(tactic_name: str) -> str:
 
 
 def tactic_export_filename(tactic_name: str) -> str:
-    return f"{app_name().replace(' ', '_')}_{_safe_filename_part(tactic_name)}.json"
+    """전술 JSON 파일 이름.
+
+    날짜를 붙이는 이유는 캡처 PNG 와 같습니다 -- 같은 전술을 며칠 뒤에 다시 저장하면
+    가격·분배금이 달라진 다른 내용인데, 이름이 같으면 브라우저가 "(1)" 을 붙여서
+    어느 게 언제 것인지 알 수 없게 됩니다. 슬롯 여러 개를 ZIP 으로 묶을 때도
+    같은 규칙을 그대로 씁니다.
+    """
+    return (f"{app_name().replace(' ', '_')}_{_safe_filename_part(tactic_name)}"
+            f"_{today_local():%Y%m%d}.json")
+
+
+def table_image_filename(kind: str, tactic_name: str) -> str:
+    """표(비교·달력·백테스트)를 이미지로 내려받을 때의 파일 이름.
+
+    전술판 캡처와 같은 규칙에 **무엇을 찍은 것인지**만 하나 더 붙입니다.
+    같은 전술에서 세 가지를 다 받으면 이름이 겹쳐서 "(1)" 이 붙기 때문입니다.
+    """
+    return (f"{app_name().replace(' ', '_')}_{_safe_filename_part(tactic_name)}"
+            f"_{_safe_filename_part(kind)}_{today_local():%Y%m%d}.png")
 
 
 def capture_image_filename(tactic_name: str) -> str:

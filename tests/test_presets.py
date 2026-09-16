@@ -136,7 +136,8 @@ def test_preset_asks_before_wiping_existing_holdings(market):
     assert not at.exception
     assert [s.ticker for s in at.session_state["portfolio"].securities] == \
         [i.ticker for i in presets.BALANCED.items]        # 아직 그대로
-    assert any("지워집니다" in w.value for w in at.warning)
+    # 예시 확인창은 "지워지고 N종목으로 바뀝니다" 라고, 들어올 것까지 같이 말합니다.
+    assert any("지워지고" in w.value for w in at.warning)
 
     [b for b in at.button if b.label == "네, 바꿀게요"][0].click().run()
     assert not at.exception

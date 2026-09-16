@@ -190,6 +190,143 @@ def inject() -> None:
           letter-spacing: .02em;
         }}
 
+        /* 같은 지수를 여러 번 담았을 때의 안내.
+           평가가 아니라 사실 전달이라 빨강(오류)이 아니라 황토색을 씁니다. */
+        .ov-box {{
+          background: rgba(176, 116, 20, 0.07);
+          border-left: 3px solid rgba(176, 116, 20, 0.6);
+          border-radius: 8px; padding: 10px 13px; margin: 4px 0 6px;
+        }}
+        .ov-head {{
+          font-size: 14px; font-weight: 700; color: rgba(138, 90, 11, 0.95);
+          margin-bottom: 7px;
+        }}
+        .ov-row {{
+          display: flex; justify-content: space-between; align-items: baseline;
+          gap: 10px; font-size: 14px; font-weight: 600; color: var(--ink-primary);
+        }}
+        .ov-pct {{ font-variant-numeric: tabular-nums; }}
+        .ov-who {{
+          font-size: 12.5px; color: var(--ink-secondary);
+          margin: 1px 0 8px; line-height: 1.5;
+        }}
+        .ov-who:last-child {{ margin-bottom: 0; }}
+
+        /* 떠 있는 창(비교표·달력) 안의 설명.
+           st.caption 은 아주 옅어서 흰 모달 위에서 거의 안 읽힙니다. 창 안의 설명은
+           "그 표를 어떻게 읽어야 하는지" 를 말하는 것이라 한 단계 진하게 씁니다. */
+        .dlg-note {{
+          font-size: 14px; line-height: 1.65; color: var(--ink-secondary);
+          margin: 2px 0 8px;
+        }}
+        .dlg-note b {{ color: var(--ink-primary); font-weight: 700; }}
+
+        /* ---- 두 전술 비교 표 ------------------------------------------------
+           이건 "읽는 표" 가 아니라 **두 덩어리를 견주는 화면** 입니다. 그래서
+           줄무늬(가로)가 아니라 **열**이 나뉘어 보여야 합니다. 지금 보고 있는 쪽에만
+           아주 옅은 바탕을 깔아서 두 열이 저절로 갈라지게 했습니다.
+           색은 초록 하나만 씁니다. 여러 색을 쓰면 색이 곧 추천이 됩니다. */
+        table.cmp {{
+          width: 100%; border-collapse: separate; border-spacing: 0;
+          margin: 2px 0 10px;
+          border: 1px solid var(--ink-hairline); border-radius: 12px; overflow: hidden;
+        }}
+        table.cmp th {{
+          text-align: left; padding: 13px 14px 11px;
+          background: rgba(15, 42, 68, 0.028);
+          border-bottom: 1px solid var(--ink-hairline);
+        }}
+        table.cmp td {{
+          padding: 11px 14px; font-size: 16px; color: var(--ink-primary);
+          border-bottom: 1px solid var(--ink-hairline);
+          font-variant-numeric: tabular-nums; vertical-align: top;
+        }}
+        table.cmp tbody tr:last-child td {{ border-bottom: 0; }}
+        /* 여기까지가 "많을수록 원하던 것", 아래는 그냥 사실 -- 선 하나로 구분 */
+        table.cmp tbody tr.sep td {{ border-bottom: 1px solid var(--ink-hairline);
+          box-shadow: 0 1px 0 var(--ink-hairline); }}
+
+        table.cmp td.k {{
+          color: var(--ink-secondary); font-size: 14px; font-weight: 600;
+          width: 28%; padding-top: 13px;
+        }}
+        /* 지금 보고 있는 쪽 열에만 옅은 바탕 + 두 쪽 사이 세로 선.
+           ⚠ td.v:first-of-type 으로 쓰면 안 됩니다 -- :first-of-type 은 클래스가 아니라
+             **요소 종류** 기준이라 첫 번째 td(라벨 칸)를 가리키고, 클래스가 v 가 아니라서
+             아무것도 안 걸립니다. 실제로 그렇게 써서 배경이 안 나왔습니다. */
+        table.cmp th.mine, table.cmp td:nth-child(2) {{
+          background: rgba(15, 42, 68, 0.04);
+          border-right: 1px solid var(--ink-hairline);
+        }}
+        table.cmp td.v {{ font-weight: 600; }}
+        table.cmp td.v .n {{ display: block; line-height: 1.25; }}
+        table.cmp td.v.win .n {{ color: #1F6B47; font-weight: 700; }}
+
+        /* 값 아래 얇은 막대 -- 몇 배 차이인지 즉시 보이게 */
+        table.cmp td.v .b {{
+          display: block; height: 3px; border-radius: 2px;
+          background: rgba(15, 42, 68, 0.07); margin-top: 7px; max-width: 200px;
+        }}
+        table.cmp td.v .b i {{
+          display: block; height: 100%; border-radius: 2px;
+          background: rgba(15, 42, 68, 0.22);
+        }}
+        table.cmp td.v.win .b i {{ background: #1F6B47; }}
+
+        /* 표 머리에 "지금/저쪽" 대신 전술 이름을 그대로 씁니다. 한 번 더 머릿속에서
+           옮겨야 하는 말을 없애면 어느 쪽이 뭔지 헷갈릴 일이 없습니다. */
+        table.cmp th.who {{
+          font-family: inherit; font-size: 16.5px; font-weight: 700;
+          color: var(--ink-primary); text-transform: none; letter-spacing: -.01em;
+          line-height: 1.3;
+        }}
+        table.cmp th.who .now {{
+          display: inline-block; margin-top: 5px;
+          font-size: 11px; font-weight: 600; letter-spacing: .02em;
+          color: var(--ink-secondary);
+          background: rgba(15, 42, 68, 0.07);
+          border-radius: 99px; padding: 1px 8px;
+        }}
+        @media (max-width: 560px) {{
+          table.cmp td {{ font-size: 14.5px; padding: 9px 10px; }}
+          table.cmp td.k {{ font-size: 13px; width: 30%; }}
+          table.cmp th.who {{ font-size: 14.5px; }}
+        }}
+
+        /* 구성 막대 (어느 나라 / 어떤 종류 / 언제 들어오나).
+           도넛 대신 가로 막대인 이유: 폰에서 도넛은 조각 안에 글자가 안 들어갑니다. */
+        .comp-wrap {{ margin: 2px 0 6px; }}
+        .comp-row {{ margin-bottom: 9px; }}
+        .comp-title {{
+          font-size: 12px; font-weight: 600; color: var(--ink-tertiary);
+          margin-bottom: 4px;
+        }}
+        .comp-stack {{
+          display: flex; height: 22px; border-radius: 6px; overflow: hidden;
+          font-size: 11px; font-weight: 700;
+        }}
+        .comp-stack b {{
+          display: flex; align-items: center; justify-content: center;
+          min-width: 0; overflow: hidden; white-space: nowrap; padding: 0 2px;
+        }}
+        .comp-tilt {{
+          font-size: 15px; color: var(--ink-primary); margin: 2px 0 4px;
+        }}
+        .comp-tilt .why {{ color: var(--ink-tertiary); font-size: 13.5px; }}
+
+        /* 브라우저 저장소 통로(components/local_store)는 화면에 아무것도 안 그리는
+           컴포넌트입니다. 그래도 Streamlit 이 iframe 자리를 잡아두기 때문에,
+           그냥 두면 화면 맨 위와 맨 아래에 빈 칸이 생깁니다. */
+        /* iframe 제목은 "components.local_store.etf_local_store" 처럼 모듈 경로가
+           앞에 붙습니다. Streamlit 버전에 따라 달라질 수 있어 끝부분만 봅니다. */
+        iframe[title$="etf_local_store"] {{
+          height: 0 !important; min-height: 0 !important; display: block;
+        }}
+        [data-testid="stElementContainer"]:has(> iframe[title$="etf_local_store"]) {{
+          height: 0; min-height: 0; margin: 0 !important; padding: 0 !important;
+          overflow: hidden;
+        }}
+
         /* 입력창 글자 */
         [data-testid="stTextInputField"], [data-testid="stNumberInputField"] {{
           font-size: 15px !important;

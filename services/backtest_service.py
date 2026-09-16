@@ -28,6 +28,7 @@ services/backtest_service.py  --  단순 Buy & Hold 백테스트 (인수인계�
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
 from datetime import date, timedelta
 
@@ -38,11 +39,185 @@ from data.providers import fx_provider
 from data.providers.base import DataUnavailable, HISTORY_CLOSE_COL
 from data.providers.registry import get_provider
 from models.portfolio import Portfolio
-from models.security import MARKET_KR, MARKET_US, Security
+from models.security import (DIST_METHOD_MANUAL, MARKET_KR, MARKET_US,
+                             Security)
 from services import calculation_service as calc
 
 # 시작일과 종목 데이터 시작일의 허용 격차(휴장/연휴). 이보다 크면 "상장 이후" 로 판단.
 LISTING_TOLERANCE_DAYS = 10
+
+
+def capture_rows(result: "BacktestResult") -> list[dict]:
+    """백테스트 결과를 **이미지로 그릴 때** 쓰는 모양 (components/table_capture).
+
+    ⚠ 최대낙폭을 뺀 그림은 만들지 않습니다. 수익만 담긴 그림이 커뮤니티로 퍼지면
+      그건 계산 결과가 아니라 광고가 됩니다. 화면에서 지키는 규칙을 그림에서도
+      똑같이 지킵니다.
+    """
+    from formatting import won_short
+
+    years = 0.0
+    if result.actual_buy_date and result.data_as_of:
+        years = (result.data_as_of - result.actual_buy_date).days / 365.25
+    on_invested = (result.profit_krw / result.total_invested_krw * 100.0
+                   if result.total_invested_krw > 0 else 0.0)
+
+    out = [
+        {"cells": [{"t": "기간"},
+                   {"t": f"{result.actual_buy_date} ~ {result.data_as_of} ({years:.1f}년)"}]},
+        {"cells": [{"t": "초기 투자금"}, {"t": won_short(result.initial_capital_krw)}]},
+        # 합계는 합계라고 부르고, 바로 아래에서 쪼갭니다. 한 칸에 주식·현금·분배금을
+        # 뭉쳐 놓으면 얼마가 주가로 번 것인지 알 수가 없습니다. 그림은 맥락 없이
+        # 퍼지므로 화면보다 더 분명해야 합니다.
+        {"cells": [{"t": "최종 자산 (합계)"},
+                   {"t": won_short(result.final_value_krw),
+                    **({"win": True} if result.profit_krw > 0 else {})}]},
+        {"cells": [{"t": "└ 주식 평가액"},
+                   {"t": won_short(result.holdings_value_krw), "dim": True}]},
+        {"cells": [{"t": "└ 잔여현금"},
+                   {"t": won_short(result.cash_balance_krw), "dim": True}]},
+    ]
+    if result.include_distributions:
+        out.append({"cells": [{"t": "└ 받은 분배금 (세전)"},
+                              {"t": won_short(result.distributions_cash_krw), "dim": True}]})
+    out += [
+        {"cells": [{"t": "수익률 (투자금 기준)"},
+                   {"t": f"{on_invested:+.2f}%",
+                    **({"win": True} if on_invested > 0 else {})}],
+         "sep": True},
+        {"cells": [{"t": "도중 최대낙폭"},
+                   {"t": (f"{result.max_drawdown_pct:.1f}%"
+                          + (f" ({result.max_drawdown_date:%Y년 %m월})"
+                             if result.max_drawdown_date else ""))
+                    if result.max_drawdown_pct < 0 else "계산 못 함"}]},
+        # 시드 전부가 종목에 들어가는 일은 드물어서, 이게 없으면 "1억이 1억 2천" 만
+        # 보이고 그중 얼마가 현금이었는지가 사라집니다.
+        {"cells": [{"t": "총 원금 (종목에 들어간 돈)"},
+                   {"t": won_short(result.total_invested_krw), "dim": True}]},
+        {"cells": [{"t": "담은 종목"}, {"t": f"{len(result.rows)}개"}]},
+    ]
+    return out
+
+
+def capture_notes(result: "BacktestResult") -> list[str]:
+    """그림 아래 붙일 안내. **화면과 같은 말**이어야 합니다."""
+    notes = [config.BACKTEST_DISCLAIMER, "지난 성과가 앞으로를 보장하지 않습니다."]
+    if result.include_distributions:
+        # 낙폭은 분배금을 빼고 잽니다(_max_drawdown 참고). 같은 그림 안에 두 숫자가
+        # 나란히 있으니, 기준이 다르다는 것을 말해두지 않으면 어긋나 보입니다.
+        notes.insert(0, "받은 분배금은 재투자하지 않고 현금으로 쌓았습니다(세전). "
+                        "최대낙폭은 그 현금을 빼고 잰 값입니다 — 넣으면 하락이 "
+                        "실제보다 작아 보입니다.")
+    return notes
+
+
+def capture_holdings(result: "BacktestResult") -> dict:
+    """종목별 표 -- **화면에 떠 있는 표와 같은 칸, 같은 순서**.
+
+    왜 요약만으로는 안 되나
+    -----------------------
+    요약만 담은 그림은 "1억이 1억 3천이 됐다" 는 숫자만 남고 **무엇을 담아서
+    그렇게 됐는지** 가 빠집니다. 그건 근거 없는 결과 자랑이 됩니다. 화면에서
+    바로 아래 붙어 있는 종목별 표까지 같이 담아야 그림 한 장이 말이 됩니다.
+    """
+    from formatting import native_amt
+
+    columns = ["종목", "살(BUY) 비율", "매수가", "살 때 환율", "수량",
+               "살 때 원금(₩)", "구간내 분할", "종료가", "평가금액(₩)", "지금 환율"]
+    rows = []
+    for x in result.rows:
+        name = x.display_name if x.market == MARKET_KR else x.ticker
+        rows.append({"cells": [
+            {"t": name},
+            {"t": f"{x.target_weight * 100:.2f}%"},
+            {"t": f"{native_amt(x.buy_price_native, x.currency)} {x.currency}"},
+            {"t": (f"{x.buy_fx:,.2f}" if x.buy_fx else "–"), "dim": True},
+            {"t": f"{x.shares:g}"},
+            {"t": f"{x.invested_krw:,.0f}"},
+            {"t": str(x.splits_in_period), "dim": True},
+            {"t": f"{native_amt(x.final_price_native, x.currency)} {x.currency}"},
+            {"t": f"{x.final_value_krw:,.0f}"},
+            {"t": (f"{x.final_fx:,.2f}" if x.final_fx else "–"), "dim": True},
+        ]})
+    return {"heading": "종목별", "columns": columns, "rows": rows}
+
+
+def capture_sections(result: "BacktestResult") -> list[dict]:
+    """그림 한 장에 들어갈 표 전부 (요약 + 종목별).
+
+    화면에서 보이는 것이 그대로 그림에 들어가야 합니다 -- 저장 버튼을 누른 사람은
+    "지금 보고 있는 이 화면" 이 저장될 거라고 생각합니다.
+    """
+    sections = [{"heading": "요약", "columns": ["", "결과"],
+                 "rows": capture_rows(result)}]
+    if result.rows:
+        sections.append(capture_holdings(result))
+    return sections
+
+
+def _max_drawdown(securities, histories: dict, rows: list, fx_hist,
+                  cash_krw: float, buy_ts, final_ts) -> tuple[float, date | None]:
+    """구간 중 고점 대비 최대 하락폭(%, 음수) 과 그 바닥 날짜.
+
+    왜 이걸 계산하나
+    ----------------
+    백테스트는 "시작 -> 끝" 두 점만 봅니다. 그 사이에 -40% 를 지나왔더라도 결과에는
+    안 나옵니다. **수익만 보여주면 앱이 아니라 광고가 됩니다.** 그 10년을 실제로
+    버티려면 무엇을 견뎌야 했는지 같이 말해야 합니다.
+
+    네트워크를 더 쓰지 않습니다
+    ---------------------------
+    필요한 일별 가격은 위에서 이미 다 받아놨습니다(histories, fx_hist).
+    여기서는 그걸 다시 훑기만 합니다.
+
+    분배금은 넣지 않습니다
+    ----------------------
+    "얼마나 빠졌나" 는 값이 내려간 폭을 뜻합니다. 중간에 받은 현금을 더하면 하락이
+    실제보다 작아 보입니다. 보수적으로 **보유 자산 + 남은 현금** 만 봅니다.
+    """
+    by_id = {r.ticker: r for r in rows}
+    frames = []
+    for sec in securities:
+        df = histories.get(sec.id)
+        row = by_id.get(sec.ticker)
+        if df is None or row is None or row.shares <= 0:
+            continue
+        s = df.loc[(df.index >= buy_ts) & (df.index <= final_ts), HISTORY_CLOSE_COL]
+        if s.empty:
+            continue
+        frames.append((sec, row, s))
+    if not frames:
+        return 0.0, None
+
+    # 나라마다 휴장일이 달라서 거래일이 어긋납니다. 교집합만 쓰면 표본이 뚝 떨어지므로,
+    # 합집합에 각 종목의 **마지막으로 알려진 가격**을 채워서 평가합니다.
+    index = frames[0][2].index
+    for _, _, s in frames[1:]:
+        index = index.union(s.index)
+    if len(index) < 2:
+        return 0.0, None
+
+    total = pd.Series(float(cash_krw), index=index)
+    fx_on_index = None
+    if fx_hist is not None and len(fx_hist) > 0:
+        fx_on_index = fx_hist.reindex(fx_hist.index.union(index)).ffill().reindex(index)
+
+    for sec, row, s in frames:
+        values = s.reindex(index).ffill() * float(row.shares)
+        if sec.market == MARKET_US and sec.currency == "USD":
+            if fx_on_index is None:
+                return 0.0, None
+            values = values * fx_on_index
+        total = total.add(values.fillna(0.0), fill_value=0.0)
+
+    total = total.dropna()
+    if len(total) < 2:
+        return 0.0, None
+    drawdown = total / total.cummax() - 1.0
+    worst = float(drawdown.min()) * 100.0
+    if not math.isfinite(worst) or worst >= 0:
+        return 0.0, None
+    return worst, drawdown.idxmin().date()
 
 
 @dataclass
@@ -84,10 +259,26 @@ class BacktestResult:
     final_value_krw: float = 0.0
     profit_krw: float = 0.0
     return_pct: float = 0.0
+    # 구간 중 고점 대비 최대 하락폭(%, 음수). 0.0 이면 계산하지 못했다는 뜻입니다.
+    # **수익률만 보여주면 앱이 아니라 광고가 됩니다.** 그 10년을 실제로 버티려면
+    # 얼마나 빠지는 걸 견뎌야 했는지 같이 말해야 합니다.
+    max_drawdown_pct: float = 0.0
+    max_drawdown_date: date | None = None
     include_distributions: bool = False
     rows: list[BacktestRow] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
     disclaimer: str = config.BACKTEST_DISCLAIMER
+
+    @property
+    def holdings_value_krw(self) -> float:
+        """종료일 기준 **주식만** 의 평가액 (현금도 분배금도 뺀 값).
+
+        final_value_krw 는 주식 + 남은 현금 + (켰다면) 받은 분배금을 **합친** 값입니다.
+        "평가금액" 이라는 한 칸에 성격이 다른 셋을 뭉쳐 놓으면, 얼마가 주가로 번 것이고
+        얼마가 통장에 쌓인 현금인지 알 수가 없습니다. 그래서 셋을 나눠서 보여줄 수
+        있도록 주식 몫만 따로 꺼냅니다 (셋을 더하면 정확히 final_value_krw 입니다).
+        """
+        return sum(r.final_value_krw for r in self.rows)
 
 
 def _load_price_history(sec: Security, start: date, end: date) -> pd.DataFrame:
@@ -226,12 +417,23 @@ def run_backtest(
         # (구간 내 주당 분배금 합계) x (보유수량) 이 그대로 성립.
         dist_cash = 0.0
         if include_distributions and shares > 0:
-            try:
-                dser = get_provider(sec.market).get_distributions(
-                    sec.ticker, buy_date + timedelta(days=1), data_as_of)
-            except DataUnavailable:
-                dser = None
-                warnings.append(f"[{sec.ticker}] 분배금 데이터가 없어 백테스트 분배금 합산에서 제외했습니다.")
+            dser = None
+            _name = sec.display_name if sec.market == MARKET_KR else sec.ticker
+            if sec.distribution_method == DIST_METHOD_MANUAL:
+                # 상세 패널에서 **직접 입력한** 값은 "최근 12개월 주당 얼마" 라는 숫자
+                # 하나입니다. 그걸 몇 년 구간에 펼치려면 언제 얼마씩 줬는지를 지어내야
+                # 합니다. 지어내느니 빼고, 뺐다고 말합니다.
+                warnings.append(
+                    f"[{_name}] 분배금을 직접 입력하신 종목입니다. 입력값은 '최근 12개월' "
+                    f"한 숫자라 과거 구간에 펼칠 수 없어, 백테스트 분배금에서 뺐습니다.")
+            else:
+                try:
+                    dser = get_provider(sec.market).get_distributions(
+                        sec.ticker, buy_date + timedelta(days=1), data_as_of)
+                except DataUnavailable:
+                    dser = None
+                    warnings.append(
+                        f"[{_name}] 분배금 데이터가 없어 백테스트 분배금 합산에서 제외했습니다.")
             if dser is not None and len(dser) > 0:
                 if is_us:
                     for ts, per_share in dser.items():
@@ -251,6 +453,8 @@ def run_backtest(
         ))
 
     cash_balance = calc.calculate_cash_balance(capital, total_invested)
+    mdd_pct, mdd_date = _max_drawdown(
+        portfolio.securities, histories, rows, fx_hist, cash_balance, buy_ts, final_ts)
     holdings_value = sum(r.final_value_krw for r in rows)
     final_value = holdings_value + cash_balance + (total_dist_cash if include_distributions else 0.0)
     profit = final_value - capital
@@ -268,6 +472,8 @@ def run_backtest(
         final_value_krw=final_value,
         profit_krw=profit,
         return_pct=ret_pct,
+        max_drawdown_pct=mdd_pct,
+        max_drawdown_date=mdd_date,
         include_distributions=include_distributions,
         rows=rows,
         warnings=warnings,

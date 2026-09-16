@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<title>local store</title>
+<style>
+  /* 화면에 아무것도 안 그립니다. 이 컴포넌트는 브라우저 저장소를 읽고 쓰는
+     통로일 뿐이고, 보이면 오히려 레이아웃에 빈 칸이 생깁니다. */
+  html, body { margin: 0; padding: 0; height: 0; overflow: hidden; }
+</style>
+</head>
+<body>
+<script>
+/* =====================================================================
+   components/local_store  --  브라우저 저장소(localStorage) 통로
+
+   왜 컴포넌트가 필요한가
+   ----------------------
+   Streamlit 은 서버에서 화면을 그리므로 브라우저 저장소에 직접 손을 댈 수 없습니다.
+   컴포넌트는 iframe 안에서 도는 진짜 브라우저 코드라, 여기서 읽고 써서 값을
+   파이썬으로 올려보냅니다.
+
+   주의 1 — 값이 바뀔 때만 올려보냅니다.
+   Streamlit 은 컴포넌트가 값을 올릴 때마다 화면을 다시 그립니다. 쓰기에 성공할
+   때마다 매번 값을 올리면 **슬라이더를 한 번 움직일 때 화면이 두 번 그려집니다.**
+   그래서 직전에 보낸 것과 같으면 안 보냅니다(lastSent).
+
+   주의 2 — 저장이 되는지 '써봐서' 확인합니다.
+   사파리 시크릿 모드나 저장소가 막힌 브라우저는 setItem 이 예외를 던집니다.
+   미리 한 번 써보고 지워보면 알 수 있습니다.
+   ⚠ 단, 크롬 시크릿 모드는 **쓰기가 성공합니다**(창을 닫을 때 지워질 뿐).
+   그래서 이 검사로는 크롬 시크릿을 못 잡습니다. 평소 안내 문구가 그 몫입니다.
+   ===================================================================== */
+
+function _send(type, data) {
+  window.parent.postMessage(Object.assign({ isStreamlitMessage: true, type: type }, data), "*");
+}
+const Streamlit = {
+  RENDER_EVENT: "streamlit:render",
+  ready: () => _send("streamlit:componentReady", { apiVersion: 1 }),
+  setFrameHeight: (h) => _send("streamlit:setFrameHeight", { height: h }),
+  setComponentValue: (v) => _send("streamlit:setComponentValue", { value: v, dataType: "json" }),
+  onRender: (cb) => window.addEventListener("message", (e) => {
+    if (e.data && e.data.type === Streamlit.RENDER_EVENT) cb(e.data.args || {});
+  }),
+};
+
+const PROBE_KEY = "__etf_manager_probe__";
+
+function store() {
+  // 저장소 자체가 막혀 있으면 window.localStorage 접근에서 바로 예외가 납니다.
+  return window.localStorage;
+}
+
+function canWrite() {
+  try {
+    const s = store();
+    s.setItem(PROBE_KEY, "1");
+    s.removeItem(PROBE_KEY);
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
+function readKey(key) {
+  try {
+    return { ok: true, data: store().getItem(key) };
+  } catch (e) {
+    return { ok: false, data: null, err: String((e && e.name) || e) };
+  }
+}
+
+function writeKey(key, text) {
+  try {
+    const s = store();
+    if (text === null || text === undefined || text === "") s.removeItem(key);
+    else s.setItem(key, text);
+    return { ok: true, err: "" };
+  } catch (e) {
+    return { ok: false, err: String((e && e.name) || e) };
+  }
+}
+
+let lastSent = null;
+
+function push(out) {
+  const s = JSON.stringify(out);
+  if (s === lastSent) return;     // 같은 값이면 안 보냄 (화면 두 번 그리기 방지)
+  lastSent = s;
+  Streamlit.setComponentValue(out);
+}
+
+Streamlit.onRender((args) => {
+  Streamlit.setFrameHeight(0);
+  const key = args.storage_key || "etf_manager_2027";
+  const mode = args.mode || "read";
+
+  if (mode === "write") {
+    const w = writeKey(key, args.data === undefined ? null : args.data);
+    // ⚠ 여기에 매번 달라지는 값(시각·카운터 등)을 넣으면 안 됩니다.
+    //    넣는 순간 위 lastSent 비교가 무력해져서 화면이 계속 다시 그려집니다.
+    push({ mode: "write", ok: w.ok, err: w.err });
+    return;
+  }
+
+  const r = readKey(key);
+  push({ mode: "read", ok: r.ok, data: r.data, err: r.err || "", writable: canWrite() });
+});
+
+Streamlit.ready();
+</script>
+</body>
+</html>

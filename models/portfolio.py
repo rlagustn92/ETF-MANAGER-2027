@@ -12,6 +12,7 @@ from dataclasses import dataclass, field
 
 import config
 import pitch_grid
+from models import numbers
 from models.security import Security
 
 
@@ -117,6 +118,22 @@ class Portfolio:
 
     @staticmethod
     def from_dict(d: dict) -> "Portfolio":
+        """예전부터 쓰던 입구. 고친 내용은 버립니다."""
+        portfolio, _ = Portfolio.load(d)
+        return portfolio
+
+    @staticmethod
+    def load(d: dict) -> tuple["Portfolio", list[str]]:
+        """전술 파일을 읽고 **(전술, 고친 내용 목록)** 을 돌려줍니다.
+
+        이상한 값이 있어도 파일을 통째로 거절하지 않습니다. 남의 전술을 받아
+        열어보는 게 이 앱의 주된 공유 방법인데, 값 하나 때문에 아무것도 못 열면
+        받은 사람 입장에서는 그냥 고장난 앱입니다.
+
+        대신 **조용히 고치지도 않습니다.** 무엇을 어떻게 바꿨는지 돌려주고,
+        화면에서 그대로 보여줍니다. ("3번째 종목의 비중이 숫자가 아니어서...")
+        """
+        issues: list[str] = []
         if not isinstance(d, dict):
             raise ValueError("전술 파일의 최상위 구조가 올바르지 않습니다.")
         positions = d.get("positions")
@@ -128,13 +145,20 @@ class Portfolio:
                 secs.append(_from_position_dict(p))
             except Exception as e:  # 개별 항목 오류가 전체를 죽이지 않도록 메시지 명확화
                 raise ValueError(f"{i + 1}번째 종목 항목이 올바르지 않습니다: {e}") from e
+            if isinstance(p, dict):
+                issues.extend(_position_issues(i, p, secs[-1]))
 
         _migrate_slots(secs)   # 자유 좌표(x/y) 전술 -> 가장 가까운 슬롯으로 자동 배치
-        cap = d.get("initial_capital_krw", config.DEFAULT_INITIAL_CAPITAL_KRW)
-        try:
-            cap = float(cap)
-        except (TypeError, ValueError):
+
+        raw_cap = d.get("initial_capital_krw", config.DEFAULT_INITIAL_CAPITAL_KRW)
+        if not numbers.is_finite_number(raw_cap):
             raise ValueError("initial_capital_krw 값이 숫자가 아닙니다.")
+        # 음수 시드는 화면 입력칸으로는 못 만들지만 파일로는 들어옵니다.
+        # 그대로 두면 데이터에 음수가 남아 계산 곳곳에서 이상하게 새어 나옵니다.
+        cap = numbers.safe_float(raw_cap, default=config.DEFAULT_INITIAL_CAPITAL_KRW,
+                                 minimum=0.0)
+        if cap != float(raw_cap):
+            issues.append(f"내 시드가 {float(raw_cap):,.0f}원이라 0원으로 맞췄습니다.")
 
         max_squad = d.get("max_squad_size", config.SQUAD_SIZE_DEFAULT)
         try:
@@ -146,7 +170,7 @@ class Portfolio:
         # 기존 종목이 잘리지 않도록 한도를 그 수만큼 자동으로 올려줌
         max_squad = max(1, min(full, max(max_squad, len(secs))))
 
-        return Portfolio(
+        portfolio = Portfolio(
             name=str(d.get("name", "불러온 전술")),
             initial_capital_krw=cap,
             fractional_shares=bool(d.get("fractional_shares", config.FRACTIONAL_SHARES_DEFAULT)),
@@ -155,6 +179,7 @@ class Portfolio:
                                             config.STRICT_CAPITAL_LIMIT_DEFAULT)),
             securities=secs,
         )
+        return portfolio, issues
 
 
 def _migrate_slots(secs: list[Security]) -> None:
@@ -193,6 +218,28 @@ def _to_position_dict(s: Security) -> dict:
     d["x"] = d["visual_x"]
     d["y"] = d["visual_y"]
     return d
+
+
+def _position_issues(index: int, raw: dict, sec: Security) -> list[str]:
+    """파일에 적힌 값과 실제로 담긴 값이 다르면, 무엇이 달라졌는지 문장으로 만듭니다.
+
+    Security 가 이미 이상한 값을 안전하게 바꿔서 담아둔 뒤입니다. 여기서는
+    "조용히 바뀐 것"을 찾아내 사용자에게 알릴 말만 만듭니다.
+    """
+    out: list[str] = []
+    nth = f"{index + 1}번째 종목({sec.ticker or '?'})"
+
+    if "target_weight" in raw and not numbers.is_finite_number(raw["target_weight"]):
+        out.append(f"{nth}의 비중이 숫자가 아니어서(`{raw['target_weight']!r}`) 0% 로 두었습니다.")
+    elif "target_weight" in raw and float(raw["target_weight"]) < 0:
+        out.append(f"{nth}의 비중이 음수여서 0% 로 두었습니다.")
+
+    for key, label in (("manual_ttm_per_share", "직접 입력한 주당 분배금"),
+                       ("manual_price", "직접 입력한 1주 가격")):
+        v = raw.get(key)
+        if v is not None and not numbers.is_finite_number(v):
+            out.append(f"{nth}의 {label}이 숫자가 아니어서 비웠습니다. 자동 조회를 씁니다.")
+    return out
 
 
 def _from_position_dict(p: dict) -> Security:

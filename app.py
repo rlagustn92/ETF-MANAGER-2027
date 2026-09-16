@@ -36,8 +36,11 @@ import presets
 from formatting import native_amt, pct, won, won_short
 from components.buy_input import buy_input
 from components.football_pitch import football_pitch
+from components.local_store import local_store
+from components.table_capture import table_capture
 from data.providers import cache
 from data.providers import search_provider
+from models import numbers
 from models.portfolio import Portfolio
 from models.security import (
     DIST_METHOD_AUTO,
@@ -48,8 +51,15 @@ from models.security import (
 from services import (
     backtest_service,
     calculation_service,
+    calendar_service,
+    compare_service,
+    composition_service,
+    formation_service,
+    overlap_service,
     fx_service,
     portfolio_service,
+    share_service,
+    slot_service,
     tactic_service,
     visitor_service,
 )
@@ -70,16 +80,47 @@ def _init_state() -> None:
     st.session_state.setdefault("selected_id", None)
     st.session_state.setdefault("search_results", [])
     st.session_state.setdefault("last_upload_sig", None)
+    # 전술 슬롯. 브라우저에 저장된 게 있으면 바로 아래에서 덮어씁니다.
+    if "slots" not in st.session_state:
+        st.session_state["slots"] = [
+            slot_service.slot_from_portfolio(st.session_state.portfolio)]
+        st.session_state["slot_active"] = 0
 
 
 def _reset_widgets_on_load() -> None:
     """새 전술을 불러왔을 때, 그 전술의 값으로 재초기화가 필요한 위젯들을 리셋."""
-    for k in ("money_initial_capital", "money_bt_capital", "squad_full_toggle",
-             "allow_overbudget_toggle"):
+    for k in ("money_initial_capital", "money_bt_capital",
+              "squad_full_toggle", "allow_overbudget_toggle"):
         st.session_state.pop(k, None)
 
 
 _init_state()
+
+# =====================================================================
+# 브라우저에 저장해 둔 전술 복원
+# =====================================================================
+# ⚠ 이 블록은 반드시 **위젯이 하나라도 만들어지기 전**이어야 합니다.
+#    위젯이 생긴 뒤에 그 위젯의 session_state 를 고치면 Streamlit 이
+#    StreamlitWidgetAlreadyInstantiatedError 를 냅니다.
+#
+# 첫 렌더에는 None 이 옵니다(브라우저가 아직 답하기 전). 답이 오면 그때 복원하고
+# 한 번 다시 그립니다. 저장된 게 없으면 다시 그리지 않으므로 헛일이 없습니다.
+_restored = local_store(mode="read", key="ls_read")
+if _restored and not st.session_state.get("store_read_done"):
+    st.session_state["store_read_done"] = True
+    # 저장이 실제로 되는 브라우저인지. 안 되면 아래에서 안내 문구가 달라집니다.
+    st.session_state["store_writable"] = bool(_restored.get("writable", True))
+    _saved = slot_service.loads(_restored.get("data"))
+    if _saved.slots:
+        st.session_state["slots"] = _saved.slots
+        st.session_state["slot_active"] = _saved.active
+        # 목표는 전술이 아니라 **사람의 것**이라 슬롯과 따로 복원합니다.
+        st.session_state["goal_monthly_krw"] = _saved.goal_monthly_krw
+        st.session_state.portfolio = _saved.slots[_saved.active].to_portfolio()
+        st.session_state["selected_id"] = None
+        _reset_widgets_on_load()
+        st.rerun()
+
 P: Portfolio = st.session_state.portfolio
 FULL_SQUAD = len(pitch_grid.all_slots())  # 전술판 전체 슬롯 수 (인수인계서 확장 요청 반영)
 
@@ -115,11 +156,62 @@ def comment_text(comp) -> str:
         lines.append(f"· {name} {pct(s.target_weight * 100)}"
                      f" · {won_short(r.actual_investment_krw)}"
                      f" · 월 {won_short(r.monthly_distribution_krw)}")
-    # TODO(URL 공유): 아래 주소 뒤에 "?p=..." 형태로 이 포트폴리오를 그대로 여는
-    # 링크를 붙일 예정입니다. 그러면 댓글을 읽은 사람이 한 번 눌러서 바로 열어보고
-    # 자기 시드로 바꿔볼 수 있습니다. (지금은 앱 주소만)
-    lines += ["", f"⚽ {config.app_name()} · {config.APP_PUBLIC_URL}"]
+    # 이 포트폴리오를 그대로 여는 주소. **이 앱에서 사람을 데려오는 유일한 통로**입니다.
+    # 캡처 이미지에는 링크를 걸 수 없으니(그림 속 글자는 못 누릅니다), 댓글에 같이
+    # 붙는 이 글자가 실제 유입 경로가 됩니다.
+    lines += ["", "▶ 이 전술 그대로 열어보기", share_service.share_url(P)]
     return "\n".join(lines)
+
+
+def composition_bars(comp) -> None:
+    """내가 뭘 담았는지 가로 막대 세 줄로 (사용자 요청).
+
+    왜 도넛이 아니라 막대인가
+    -------------------------
+    폰에서 도넛 세 개를 나란히 놓으면 각각 100px 도 안 됩니다. 거기에
+    "커버드콜 68%" 라는 글자가 안 들어갑니다. 막대는 글자를 **안에** 넣을 수 있고
+    좁아져도 그대로 읽힙니다.
+    """
+    bars = composition_service.bars(comp)
+    if not bars:
+        return
+    # 한 막대 안에서만 진하기로 순서를 표현합니다. 색으로 좋고 나쁨을 말하지
+    # 않습니다 -- 색이 곧 추천이 되면 안 됩니다.
+    shades = ["#1F6B47", "#4E9E78", "#8FBFA6", "#BFD6C9", "#DCE6E0"]
+    html_parts = []
+    for bar in bars:
+        cells = "".join(
+            f"<b style='width:{s.pct:.4f}%;background:{shades[min(i, len(shades) - 1)]};"
+            f"color:{'#fff' if i < 2 else '#12263c'}'>"
+            f"{html.escape(s.label)} {s.pct:.0f}%</b>"
+            for i, s in enumerate(bar.slices)
+        )
+        html_parts.append(
+            f"<div class='comp-row'><div class='comp-title'>{html.escape(bar.title)}</div>"
+            f"<div class='comp-stack'>{cells}</div></div>"
+        )
+    st.markdown("<div class='comp-wrap'>" + "".join(html_parts) + "</div>",
+                unsafe_allow_html=True)
+
+    verdict = composition_service.tilt(comp)
+    if verdict:
+        label, why = verdict
+        # 평가가 아니라 거울입니다. 왜 그렇게 봤는지를 반드시 같이 적습니다.
+        st.markdown(
+            f"<div class='comp-tilt'>지금 구성은 <b>{html.escape(label)}</b> "
+            f"<span class='why'>{html.escape(why)}</span></div>",
+            unsafe_allow_html=True,
+        )
+
+
+def dialog_note(html_text: str) -> None:
+    """떠 있는 창 안의 설명 한 줄.
+
+    st.caption 은 아주 옅은 잉크(--ink-tertiary)라 흰 모달 위에서 거의 안 읽힙니다.
+    창 안의 설명은 "그냥 참고" 가 아니라 **그 표를 어떻게 읽어야 하는지** 를 말하는
+    것이라, 한 단계 진한 잉크로 씁니다.
+    """
+    st.markdown(f"<div class='dlg-note'>{html_text}</div>", unsafe_allow_html=True)
 
 
 def note(html_text: str) -> None:
@@ -187,8 +279,178 @@ def _apply_preset(preset: presets.Preset) -> None:
     st.session_state.selected_id = (new_portfolio.securities[0].id
                                     if new_portfolio.securities else None)
     st.session_state.pop("preset_pending", None)
-    st.session_state.pop("bt_result", None)
+    for _k in ("bt_result", "bt_signature", "bt_context"):
+        st.session_state.pop(_k, None)
     _reset_widgets_on_load()   # 시드 입력칸 등을 새 값으로 다시 채우기 위해
+
+
+def _live_name() -> str:
+    """지금 전술명.
+
+    ⚠ 전술명 입력칸에 key 를 붙이고 session_state 로 읽으면 안 됩니다.
+      key 가 붙은 text_input 은 **예시를 불러와도 입력칸 글자가 안 바뀝니다**
+      (브라우저가 들고 있던 옛 값을 계속 돌려줍니다). 그러면 다음 클릭 때 옛 이름이
+      되돌아와서 슬롯 이름을 덮어씁니다. 실제로 겪은 버그입니다.
+      key 없이 value= 로만 그려야 값이 갱신되고, 그래서 여기서는 P.name 만 봅니다.
+      대신 슬롯 바를 전술명 입력칸보다 **나중에** 그려서 이름이 안 밀리게 합니다.
+    """
+    return str(P.name or slot_service.DEFAULT_SLOT_NAME)
+
+
+def _current_slot() -> slot_service.Slot:
+    """지금 편집 중인 내용을 슬롯 한 칸으로."""
+    portfolio_dict = P.to_dict()
+    portfolio_dict["name"] = _live_name()
+    return slot_service.Slot(name=_live_name(), tactic=portfolio_dict)
+
+
+def _slots_snapshot() -> tuple[list[slot_service.Slot], int]:
+    """저장/내려받기용. 지금 편집 중인 칸만 최신 내용으로 갈아끼웁니다."""
+    slots = list(st.session_state["slots"])
+    active = int(st.session_state["slot_active"])
+    if 0 <= active < len(slots):
+        slots[active] = _current_slot()
+    return slots, active
+
+
+def _open_slot(slots: list[slot_service.Slot], target: int) -> None:
+    """슬롯 목록을 확정하고 target 번 칸을 펼칩니다."""
+    target = max(0, min(target, len(slots) - 1))
+    st.session_state["slots"] = slots
+    st.session_state["slot_active"] = target
+    st.session_state.portfolio = slots[target].to_portfolio()
+    st.session_state["selected_id"] = None
+    _dismiss_preset_confirm()
+    for k in ("bt_result", "bt_signature", "bt_context"):
+        st.session_state.pop(k, None)
+    _reset_widgets_on_load()
+
+
+def _switch_slot(target: int) -> None:
+    """슬롯 이동. 지금 칸을 저장하고 저쪽 칸을 펼칩니다."""
+    slots, active = _slots_snapshot()
+    # 아무것도 안 담은 빈 칸은 떠날 때 치웁니다. 그래야 "＋" 를 눌러보다 만
+    # 흔적이 탭으로 영영 남지 않습니다. (마지막 한 칸은 남겨둡니다)
+    if len(slots) > 1 and active != target and not P.securities:
+        slots.pop(active)
+        if target > active:
+            target -= 1
+    _open_slot(slots, target)
+
+
+def _add_slot() -> None:
+    """빈 칸을 하나 더 만들고 그리로 갑니다.
+
+    ⚠ 여기서는 _switch_slot 을 쓰면 안 됩니다. 지금 칸이 비어 있으면 그쪽이
+    "떠날 때 빈 칸 치우기"를 해버려서, 빈 칸에서 ＋ 를 누르면 하나 지우고 하나
+    만드는 꼴이 됩니다 -- 사용자 눈에는 **아무 일도 안 일어난 것**으로 보입니다.
+    """
+    slots, _ = _slots_snapshot()
+    if len(slots) >= slot_service.MAX_SLOTS:
+        return
+    name = slot_service.unique_name(slots)
+    slots.append(slot_service.Slot(
+        name=name, tactic=slot_service.empty_portfolio(name).to_dict()))
+    _open_slot(slots, len(slots) - 1)
+
+
+def _apply_slots(new_slots: list[slot_service.Slot], *, replace_all: bool) -> None:
+    """불러온 전술을 슬롯에 반영. 파일 한 개면 지금 칸만, 백업 ZIP 이면 전부."""
+    if not new_slots:
+        return
+    if replace_all:
+        st.session_state["slots"] = new_slots[:slot_service.MAX_SLOTS]
+        st.session_state["slot_active"] = 0
+    else:
+        slots = list(st.session_state["slots"])
+        active = int(st.session_state["slot_active"])
+        if 0 <= active < len(slots):
+            slots[active] = new_slots[0]
+        else:
+            slots, active = new_slots[:1], 0
+        st.session_state["slots"] = slots
+        st.session_state["slot_active"] = active
+    active = int(st.session_state["slot_active"])
+    st.session_state.portfolio = st.session_state["slots"][active].to_portfolio()
+    st.session_state["selected_id"] = None
+    for k in ("bt_result", "bt_signature", "bt_context"):
+        st.session_state.pop(k, None)
+    _reset_widgets_on_load()
+
+
+def _adopt_shared(items: list[share_service.ShareItem]) -> None:
+    """공유 링크로 받은 전술을 내 것으로 가져옵니다.
+
+    ⚠ 자동으로 적용하면 안 됩니다. 링크를 눌러 들어온 사람이 이미 자기 전술을
+      짜두었을 수 있는데, 그걸 말없이 덮어쓰면 남의 링크 하나로 남의 작업이
+      날아갑니다. 그래서 배너의 버튼을 눌렀을 때만 여기로 옵니다.
+
+    담을 자리도 비어 있는 칸을 먼저 찾습니다. 지금 칸에 뭔가 담겨 있으면 새 칸을
+    만들어 그리로 넣습니다 -- 가져오기가 지우기가 되면 안 되니까요.
+    """
+    # 종목 이름을 찾느라 시간이 걸릴 수 있습니다(모르는 미국 티커는 조회해야 함).
+    # 화면이 멈춘 것처럼 보이지 않게 돌아가는 표시를 띄웁니다.
+    with st.spinner("전술을 가져오는 중..."):
+        shared = share_service.to_portfolio(
+            items, name="받은 전술", initial_capital_krw=P.initial_capital_krw)
+    slots, active = _slots_snapshot()
+    if not P.securities:
+        slots[active] = slot_service.slot_from_portfolio(shared)
+        target = active
+    elif len(slots) < slot_service.MAX_SLOTS:
+        slots.append(slot_service.slot_from_portfolio(shared))
+        target = len(slots) - 1
+    else:
+        # 칸이 다 찼으면 지금 칸에 넣습니다. 이때는 덮어쓰는 것이므로 배너에서
+        # 미리 알려줍니다.
+        slots[active] = slot_service.slot_from_portfolio(shared)
+        target = active
+    _open_slot(slots, target)
+    _clear_share_link()
+
+
+def _clear_share_link() -> None:
+    """주소창의 ?p= 를 지웁니다.
+
+    안 지우면 새로고침할 때마다 "누군가 공유한 전술입니다" 가 다시 뜨고,
+    이미 가져온 사람에게는 그게 잔소리가 됩니다.
+    """
+    st.session_state["share_dismissed"] = True
+    try:
+        if share_service.QUERY_KEY in st.query_params:
+            del st.query_params[share_service.QUERY_KEY]
+    except Exception:
+        pass
+
+
+def _backtest_signature(portfolio: Portfolio, start, capital, include_dist) -> tuple:
+    """백테스트 결과가 "어떤 조건으로" 나온 것인지를 나타내는 지문.
+
+    저장된 결과의 지문과 지금 화면의 지문이 다르면 그 결과는 낡은 것입니다.
+    비교에 쓰는 값만 담고, 화면 배치(슬롯 위치)처럼 결과와 무관한 것은 뺍니다.
+    """
+    return (
+        tuple(sorted((s.market, s.ticker, round(float(s.target_weight), 6))
+                     for s in portfolio.securities)),
+        round(numbers.safe_float(capital), 2),
+        str(start),
+        bool(include_dist),
+        bool(portfolio.fractional_shares),
+    )
+
+
+def _dismiss_preset_confirm() -> None:
+    """예시 불러오기 확인창("정말 바꿀래요?")을 닫습니다.
+
+    확인창이 떠 있는데 사용자가 마음을 바꿔 다른 걸 하면(종목을 담거나, 지우거나,
+    다른 종목을 고르면) 그건 "예시 불러오기는 됐다"는 뜻입니다. 그런데도 경고가
+    화면 위쪽에 계속 남아 방해하고, **실수로 '네, 바꿀게요' 를 누르면 그동안
+    작업하던 포트폴리오가 통째로 날아갑니다.**
+
+    그래서 포트폴리오를 건드리는 동작이 일어나면 확인창을 조용히 닫습니다.
+    (닫기만 할 뿐 아무것도 지우지 않으므로, 잘못 닫혀도 잃는 게 없습니다)
+    """
+    st.session_state.pop("preset_pending", None)
 
 
 def _add_security(hit: search_provider.SearchHit) -> bool:
@@ -202,6 +464,7 @@ def _add_security(hit: search_provider.SearchHit) -> bool:
     try:
         P.add(sec)
         st.session_state.selected_id = sec.id
+        _dismiss_preset_confirm()
         return True
     except ValueError as e:
         st.warning(str(e))
@@ -235,8 +498,28 @@ with tc2:
             "</div>",
             unsafe_allow_html=True,
         )
+# =====================================================================
+# 전술 슬롯 (사용자 요청: 공격형/배당형처럼 여러 개를 굴리는 사람)
+# =====================================================================
+# 저장 칸이 하나뿐인 자동 저장은 포트폴리오를 여러 개 굴리는 사람에게 반쪽입니다.
+# 지금 보고 있는 칸이 알아서 저장되고, 탭을 눌러 갈아탑니다.
+#
+# ⚠ 여기서는 자리만 잡아두고, 실제로 그리는 건 전술명 입력칸보다 **뒤**입니다.
+#   슬롯 이름 = 전술명이라, 입력칸보다 먼저 그리면 이름이 한 박자 늦게 따라옵니다.
+#   (요약 바도 같은 방식으로 자리를 먼저 잡습니다)
+slot_bar_slot = st.container()
+
+# 공유 링크로 들어온 사람에게 보일 배너 자리. 링크를 누른 사람이 **제일 먼저**
+# 봐야 하는 것이라 맨 위에 둡니다. (내용은 아래에서 채웁니다)
+share_banner_slot = st.container()
+
 hc1, hc2, hc3 = st.columns([2, 1, 1])
 with hc1:
+    # 이름 추천 버튼이 넣어둔 값을 위젯을 만들기 **전에** 반영합니다.
+    # (만들어진 뒤에 고치면 StreamlitWidgetAlreadyInstantiatedError)
+    _suggested = st.session_state.pop("pending_tactic_name", None)
+    if _suggested:
+        P.name = _suggested
     P.name = st.text_input("전술명", value=P.name, placeholder="전술명")
 
     # ---- 예시로 시작하기 (사용자 요청) ----------------------------------------
@@ -248,8 +531,12 @@ with hc1:
     st.caption("처음이라면 예시로 시작해보세요 · 예시일 뿐이며 투자 추천이 아닙니다.")
     for _row in (presets.PRESETS[:3], presets.PRESETS[3:] + (presets.RESET,)):
         for _col, _preset in zip(st.columns(len(_row)), _row):
-            if _col.button(_preset.label, key=f"preset_{_preset.key}", width="stretch",
-                           help=_preset.summary):
+            _clicked = _col.button(_preset.label, key=f"preset_{_preset.key}",
+                                   width="stretch", help=_preset.summary)
+            # 버튼 글자만으로는 뭘 받게 되는지 모릅니다. 특히 **시드가 바뀐다는 것**을
+            # 누르고 나서야 알게 되므로, 누르기 전에 밑에 한 줄로 적어둡니다.
+            _col.caption(_preset.chip())
+            if _clicked:
                 if P.securities:
                     st.session_state["preset_pending"] = _preset.key
                 else:
@@ -258,12 +545,18 @@ with hc1:
 
     _pending = presets.get(st.session_state.get("preset_pending") or "")
     if _pending:
-        st.warning(
-            f"지금 담은 종목 {len(P.securities)}개가 모두 지워집니다."
-            if _pending is presets.RESET else
-            f"'{_pending.label}' 예시를 불러오면 지금 담은 종목 "
-            f"{len(P.securities)}개가 모두 지워집니다."
-        )
+        # 무엇이 사라지는지만 말하지 말고 **무엇이 들어오는지**도 말합니다.
+        # 특히 시드가 바뀐다는 건 지금까지 누르고 나서야 알 수 있었습니다.
+        if _pending is presets.RESET:
+            _confirm = f"지금 담은 종목 {len(P.securities)}개가 모두 지워집니다."
+        else:
+            _confirm = (f"'{_pending.label}' 예시를 불러오면 지금 담은 종목 "
+                        f"{len(P.securities)}개가 지워지고 "
+                        f"{len(_pending.items)}종목으로 바뀝니다.")
+            if abs(P.initial_capital_krw - _pending.capital_krw) > 0.5:
+                _confirm += (f" 내 시드도 {won_short(P.initial_capital_krw)} → "
+                             f"{won_short(_pending.capital_krw)} 로 바뀝니다.")
+        st.warning(_confirm)
         _yc, _nc = st.columns(2)
         if _yc.button("네, 바꿀게요", key="preset_ok", width="stretch", type="primary"):
             _apply_preset(_pending)
@@ -288,6 +581,13 @@ with hc3:
              f"켜면 전술판 슬롯 전체({FULL_SQUAD}개)까지 늘어납니다."),
     )
     P.max_squad_size = FULL_SQUAD if full_squad else config.SQUAD_SIZE_DEFAULT
+    # 26개를 담은 채로 토글을 끄면 "보유 26개 / 한도 11개" 라는 모순이 생깁니다.
+    # 담은 종목을 강제로 지우거나 토글을 못 끄게 막지는 않습니다(하려는 걸 막기보다
+    # 알려주는 쪽). 다만 아무 말도 안 하면 나중에 종목을 추가하려다 거부당하고서야
+    # "왜 더 못 담지?" 하게 되므로, 지금 상태를 분명히 적어둡니다.
+    if len(P.securities) > P.max_squad_size:
+        st.caption(f"⚠ 지금 {len(P.securities)}개를 담고 있어 한도({P.max_squad_size}개)를 "
+                   f"넘습니다. 담은 종목은 그대로 두지만, 더 담으려면 이 토글을 다시 켜세요.")
     if "allow_overbudget_toggle" not in st.session_state:
         st.session_state["allow_overbudget_toggle"] = not P.strict_capital_limit
     allow_over = st.toggle(
@@ -296,6 +596,98 @@ with hc3:
              "잘라냅니다. 켜면 제한 없이 입력할 수 있고, 초과 시 경고만 표시합니다.",
     )
     P.strict_capital_limit = not allow_over
+
+# ---- 공유 링크로 들어온 사람에게 보이는 배너 -------------------------------
+# 링크를 누른 사람은 "남의 전술"을 들고 온 상태입니다. 그대로 적용하지 않고
+# 무엇을 받게 되는지 먼저 보여준 뒤, 누를 때만 가져옵니다.
+_shared_items = ([] if st.session_state.get("share_dismissed")
+                 else share_service.decode(st.query_params.get(share_service.QUERY_KEY)))
+if _shared_items:
+    _full = len(st.session_state["slots"]) >= slot_service.MAX_SLOTS and P.securities
+    with share_banner_slot, st.container(border=True):
+        _sc1, _sc2, _sc3 = st.columns([3, 1, 0.7])
+        with _sc1:
+            st.markdown(f"**누군가 공유한 전술입니다** — {share_service.summary(_shared_items)}")
+            st.caption("내 시드에 맞춰 다시 계산됩니다. "
+                       + ("⚠ 슬롯이 다 차서 **지금 칸을 덮어씁니다.**" if _full
+                          else "지금 담은 종목은 그대로 두고 새 칸에 담습니다."))
+        if _sc2.button("이 전술 따라하기", type="primary", width="stretch",
+                       key="share_adopt"):
+            _adopt_shared(_shared_items)
+            st.rerun()
+        if _sc3.button("닫기", width="stretch", key="share_dismiss"):
+            _clear_share_link()
+            st.rerun()
+
+# ---- 슬롯 바 (위에서 자리만 잡아둔 곳에 그립니다) --------------------------
+# 전술명 입력칸이 먼저 돌아야 슬롯 이름이 바로 따라옵니다. 그래서 화면에서는
+# 위에 있지만 코드로는 여기서 그립니다.
+with slot_bar_slot:
+    _slots: list[slot_service.Slot] = st.session_state["slots"]
+    _active: int = int(st.session_state["slot_active"])
+    sb_left, sb_right = st.columns([2.6, 1])
+    with sb_left:
+        # 칸 수를 MAX_SLOTS+1 로 고정합니다. 슬롯이 늘 때마다 버튼 너비가 출렁이면
+        # 방금 누른 자리에 다른 버튼이 와 있게 됩니다.
+        _cols = st.columns(slot_service.MAX_SLOTS + 1)
+        for _i, _slot in enumerate(_slots):
+            _nm = _live_name() if _i == _active else _slot.name
+            _cnt = len(P.securities) if _i == _active else _slot.security_count
+            if _cols[_i].button(
+                    slot_service.slot_label(_nm, _cnt), key=f"slot_{_i}", width="stretch",
+                    type="primary" if _i == _active else "secondary",
+                    help=f"{_nm} · 종목 {_cnt}개"):
+                if _i != _active:
+                    _switch_slot(_i)
+                    st.rerun()
+        if len(_slots) < slot_service.MAX_SLOTS:
+            if _cols[len(_slots)].button("＋ 빈 칸", key="slot_add", width="stretch",
+                                         help="전술을 하나 더 만듭니다. "
+                                              "빈 채로 다른 칸으로 가면 저절로 치워집니다."):
+                _add_slot()
+                st.rerun()
+    with sb_right:
+        _zip_slots, _ = _slots_snapshot()
+        st.download_button(
+            f"💾 전술 {len(_zip_slots)}개 한 번에 저장", data=slot_service.to_zip(_zip_slots),
+            file_name=slot_service.zip_filename(len(_zip_slots)), mime="application/zip",
+            width="stretch",
+            help="슬롯 전부를 ZIP 파일 하나로 내려받습니다. 압축을 풀면 전술마다 "
+                 "JSON 파일이 하나씩 나오고, 이 ZIP 을 그대로 다시 올리면 슬롯이 "
+                 "이름까지 한 번에 복원됩니다.",
+        )
+
+    # ---- 두 전술 나란히 비교 (슬롯이 2개 이상일 때만) ----------------------
+    # 지금 보고 있는 칸이 A, 여기서 고르는 게 B 입니다. 슬롯 두 개를 고르는
+    # "선택 모드" 를 만들면 클릭이 늘고 헷갈립니다 -- 지금 보고 있는 게 A 라는 건
+    # 설명이 필요 없습니다.
+    # 슬롯은 많아야 3칸이라 고를 게 한둘뿐입니다. 드롭다운은 과한 장치였고
+    # (열어서 고르는 두 번의 동작, 게다가 검색 필터 때문에 항목이 가려지기도 합니다),
+    # **버튼이 더 눈에 띄고 한 번에 끝납니다.**
+    _other_slots = [(i, s) for i, s in enumerate(_slots) if i != _active]
+    for _oi, _oslot in _other_slots:
+        if sb_right.button(compare_service.button_label(_oslot.name),
+                           key=f"cmp_{_oi}", width="stretch",
+                           help=f"지금 보는 전술과 '{_oslot.name}' 을 나란히 놓고 봅니다."):
+            st.session_state["cmp_target"] = _oi
+            st.session_state["cmp_open"] = True
+            st.rerun()
+
+    # 저장이 되는 브라우저인지에 따라 안내가 달라집니다. 늘 같은 경고문만 띄워두면
+    # 아무도 안 읽는데, 진짜 저장이 안 되는 순간에만 말이 달라지면 눈에 들어옵니다.
+    if (st.session_state.get("store_read_done")
+            and not st.session_state.get("store_writable", True)):
+        st.warning("⚠ **이 브라우저에서는 저장이 안 됩니다.** 시크릿 모드이거나 저장소가 "
+                   "막혀 있어요. 남기시려면 아래 **전술 저장**으로 파일을 받아두세요.")
+    else:
+        st.caption("자동 저장됨 · **이 브라우저에만** 저장됩니다. 다른 기기나 시크릿 "
+                   "모드에서는 안 보여요. 남기시려면 파일로 받아두세요.")
+
+# 전술 파일을 불러오면서 고친 값이 있으면 여기서 알립니다.
+# (불러오기 직후에는 st.rerun() 이 메시지를 지우므로 세션에 넣어뒀다가 꺼냅니다)
+_load_note = st.session_state.pop("tactic_load_note", None)
+if _load_note:
+    st.info(_load_note)
 
 # 위쪽 "간략 요약 바" 자리 예약 -- 값은 compute() 이후에 채움 (아래쪽 "상세" 요약과 분리)
 summary_bar_slot = st.container()
@@ -319,6 +711,7 @@ with col_left:
         if st.button(f"{mark} {label} · {sec.target_weight * 100:.2f}%",
                      key=f"pick_{sec.id}", width="stretch"):
             st.session_state.selected_id = sec.id
+            _dismiss_preset_confirm()
             st.rerun()
     st.caption("클릭하면 오른쪽 상세 패널에서 비중을 바로 설정할 수 있습니다.")
 
@@ -453,11 +846,22 @@ with col_right:
         buy_key, nonce_key = f"buy_{sel.id}", f"buy_nonce_{sel.id}"
         pending = st.session_state.get(buy_key)
         if pending and pending.get("nonce") != st.session_state.get(nonce_key):
+            # nonce 는 값이 멀쩡하든 아니든 먼저 소비합니다. 안 그러면 이상한 값이
+            # 매 렌더마다 다시 들어와서 같은 판단을 계속 반복하게 됩니다.
             st.session_state[nonce_key] = pending.get("nonce")
-            if pending.get("source") == "qty":
-                _weight_from_qty(float(pending.get("qty") or 0.0))
-            else:
-                _weight_from_amount(float(pending.get("amount") or 0.0))
+            # ⚠ 이 값은 **브라우저에서 온 외부 입력**입니다. 받는 쪽에서 검사합니다.
+            #   NaN 이 들어오면 clamp 가 min(100, nan) -> 100 을 돌려줘서
+            #   비중이 조용히 100% 로 튑니다(다른 종목이 전부 눌립니다).
+            #   재현이 어려워 "가끔 비중이 이상해진다" 는 제보로만 올 유형이라,
+            #   아예 무시하고 지금 비중을 그대로 둡니다.
+            _src = pending.get("source")
+            _raw = pending.get("qty") if _src == "qty" else pending.get("amount")
+            if numbers.is_finite_number(_raw) or _raw in (None, "", 0):
+                _value = numbers.safe_float(_raw, default=0.0, minimum=0.0)
+                if _src == "qty":
+                    _weight_from_qty(_value)
+                else:
+                    _weight_from_amount(_value)
 
         wc1, wc2 = st.columns([3, 1])
         with wc1:
@@ -542,10 +946,251 @@ with summary_bar_slot:
         # 감을 못 잡습니다. 무슨 비율인지까지 적습니다 (사용자 요청).
         ("투자금 대비 분배율", pct(comp.income_yield_on_invested_pct), False),
     ])
+    # ---- 내 목표 (사용자 요청) --------------------------------------------
+    # 숫자로 된 목표가 생기면 사람은 **그 숫자를 보러 돌아옵니다.**
+    # 목표는 전술이 아니라 사람의 것이라, 슬롯을 바꿔도 그대로 남습니다.
+    # 그래야 "공격안으로 바꾸니 41% -> 78% 가 되네" 가 보입니다.
+    _gc1, _gc2 = st.columns([1, 2.1])
+    with _gc1:
+        _goal = money_input(
+            "내 목표 (월 분배금, ₩)", key="money_goal",
+            default_value=float(st.session_state.get("goal_monthly_krw") or 0.0),
+            min_value=0,
+            help="'월 100만원 받기' 처럼 받고 싶은 월 분배금을 적으세요. "
+                 "0 이면 목표를 안 씁니다. 전술을 바꿔도 목표는 그대로 남습니다.",
+        )
+        st.session_state["goal_monthly_krw"] = _goal
+    with _gc2:
+        st.markdown("<div style='height:1.7rem'></div>", unsafe_allow_html=True)
+        if _goal > 0:
+            _ratio = calculation_service.progress_to_goal(
+                comp.monthly_distribution_krw, _goal)
+            st.progress(min(1.0, _ratio),
+                        text=f"지금 월 {won_short(comp.monthly_distribution_krw)} · "
+                             f"목표의 {pct(_ratio * 100, 1)}")
+            _need = calculation_service.capital_needed_for_goal(
+                comp.initial_capital_krw, comp.monthly_distribution_krw, _goal)
+            if _ratio >= 1.0:
+                note(f"목표를 넘었습니다. 지금 구성으로 월 "
+                     f"<b>{won_short(comp.monthly_distribution_krw)}</b> 입니다.")
+            elif _need is not None:
+                note(f"지금 이 구성 그대로 <b>시드만</b> "
+                     f"<b>{won_short(_need)}</b> 으로 늘리면 월 "
+                     f"<b>{won_short(_goal)}</b> 이 됩니다. "
+                     f"<span style='opacity:.75'>(지금 시드 {won_short(comp.initial_capital_krw)} · "
+                     f"분배율이 달라지면 결과도 달라집니다)</span>")
+            else:
+                st.caption("아직 분배금이 0 이라 얼마가 더 필요한지 계산할 수 없습니다. "
+                           "종목을 담아보세요.")
+
+    # "월 얼마" 라는 숫자 하나 옆에, 그게 **언제 어느 종목에서** 들어오는지 여는 문.
+    # 포트폴리오를 짜는 건 한 번이지만 이건 매달 궁금해집니다.
+    if comp.rows and st.button("📅 분배금 달력 — 언제 얼마 들어오나", key="cal_open_btn",
+                               help="새 데이터를 받아오지 않습니다. 이미 계산에 쓴 "
+                                    "지급 이력을 날짜별로 펼쳐서 보여줍니다."):
+        st.session_state["cal_open"] = True
+        st.session_state["cal_ym"] = (config.today_local().year, config.today_local().month)
+        st.rerun()
+
+# ---- 📅 분배금 달력 (떠 있는 창) ------------------------------------------
+def _close_calendar() -> None:
+    st.session_state["cal_open"] = False
+
+
+# ⚠ on_dismiss 를 반드시 달아야 합니다. 안 달면 창의 X 로 닫아도 cal_open 이 True 로
+#   남아서, **다음에 아무 버튼이나 누르는 순간 달력이 혼자 다시 열립니다.**
+#   (브라우저에서만 재현되는 동작이라 AppTest 로는 못 잡습니다 -- 실제로 그렇게 잡았습니다)
+@st.dialog("📅 분배금 달력", width="large", on_dismiss=_close_calendar)
+def _distribution_calendar() -> None:
+    """언제 얼마가 들어오는지 달별로. **새 데이터를 받아오지 않습니다.**
+
+    달을 넘기는 버튼은 화면을 그리기 **전에** 먼저 읽습니다. 나중에 읽으면 이번
+    렌더는 옛날 달을 그린 뒤라서 한 박자 늦게 바뀝니다.
+    """
+    _y, _m = st.session_state.get(
+        "cal_ym", (config.today_local().year, config.today_local().month))
+    n1, n2, n3 = st.columns([1, 2.2, 1])
+    _prev = n1.button("◀ 이전 달", width="stretch", key="cal_prev",
+                      disabled=not calendar_service.can_go(comp, _y, _m, -1))
+    _next = n3.button("다음 달 ▶", width="stretch", key="cal_next",
+                      disabled=not calendar_service.can_go(comp, _y, _m, +1))
+    if _prev:
+        _y, _m = calendar_service.shift_month(_y, _m, -1)
+    elif _next:
+        _y, _m = calendar_service.shift_month(_y, _m, +1)
+    st.session_state["cal_ym"] = (_y, _m)
+
+    plan = calendar_service.month_plan(comp, _y, _m)
+    n2.markdown(f"<div style='text-align:center;font-size:17px;font-weight:700;"
+                f"padding-top:5px'>{html.escape(plan.title)}</div>",
+                unsafe_allow_html=True)
+
+    if not plan.in_range:
+        st.info(f"지급 이력이 {calendar_service.MONTH_RANGE}개월치뿐이라 이 달은 "
+                f"보여드릴 근거가 없습니다.")
+        return
+
+    st.markdown(f"#### {won(plan.total_krw)}")
+    if plan.basis == calendar_service.BASIS_FORECAST:
+        dialog_note("지난 12개월 지급 패턴으로 만든 <b>예상</b>입니다. "
+                    "실제 지급일·금액은 달라질 수 있어요.")
+    else:
+        # 지나간 달이라도 수량은 '지금' 담은 수량입니다. 그때 이 종목을 갖고 있었는지는
+        # 우리가 모르므로 "받으셨습니다" 라고 말하면 안 됩니다.
+        dialog_note("그 달에 <b>실제로 지급된</b> 금액입니다. 다만 수량은 지금 담은 것 "
+                    "기준이라, <b>지금 이 구성이었다면</b> 이만큼이라는 뜻입니다.")
+
+    if plan.fx_missing:
+        st.warning("환율을 가져오지 못해 미국 종목은 빼고 계산했습니다.")
+
+    if plan.entries:
+        st.dataframe(
+            pd.DataFrame([{
+                "날짜": f"{e.day:%m/%d}",
+                "종목": e.label,
+                "금액": won(e.amount_krw),
+            } for e in plan.entries]),
+            width="stretch", hide_index=True,
+        )
+    else:
+        st.info("이 달에는 들어오는 분배금이 없습니다.")
+
+    if plan.silent:
+        dialog_note("이 달 지급 없음 — "
+                    + " · ".join(html.escape(n) for n in plan.silent))
+
+    _cc1, _cc2 = st.columns([1.6, 1])
+    with _cc2:
+        table_capture(
+            title=f"📅 {plan.title}",
+            subtitle=f"{_live_name()} · 합계 {won(plan.total_krw)}",
+            sections=[{"columns": ["날짜", "종목", "금액"],
+                       "rows": calendar_service.capture_rows(plan)}],
+            notes=calendar_service.capture_notes(plan),
+            footer=f"⚽ {config.app_name()} · {config.APP_PUBLIC_URL}",
+            filename=config.table_image_filename(
+                f"분배금달력_{plan.year}{plan.month:02d}", _live_name()),
+            key="cal_capture",
+        )
+    with _cc1:
+        if st.button("닫기", width="stretch", key="cal_close"):
+            _close_calendar()
+            st.rerun()
+
+
+if st.session_state.get("cal_open") and comp.rows:
+    _distribution_calendar()
+
+
+# ---- ⇄ 두 전술 나란히 비교 (떠 있는 창) ------------------------------------
+def _close_compare() -> None:
+    """창을 닫습니다.
+
+    비교를 **버튼**으로 열기 때문에 여기서는 상태 하나만 끄면 됩니다.
+    드롭다운이었을 때는 고른 값을 되돌려놓아야 했고(안 그러면 닫자마자 다시 열림),
+    그 되돌리기가 위젯 생성 뒤에 일어나 예외가 나서 쪽지를 남기는 장치까지
+    필요했습니다. 버튼으로 바꾸면서 그게 전부 사라졌습니다.
+    """
+    st.session_state["cmp_open"] = False
+
+
+@st.dialog("⇄ 두 전술 비교", width="large", on_dismiss=_close_compare)
+def _compare_dialog(target_index: int) -> None:
+    slots = st.session_state["slots"]
+    if not (0 <= target_index < len(slots)):
+        _close_compare()
+        return
+    other = slots[target_index]
+
+    # ⚠ 여기서만 계산합니다. 첫 화면에서 자동으로 돌면 평소 속도가 느려집니다.
+    with st.spinner(f"'{other.name}' 을 계산하는 중..."):
+        b_comp = portfolio_service.compute(other.to_portfolio())
+
+    # 표 머리에 **전술 이름을 그대로** 씁니다. "지금 / 저쪽" 은 한 번 더 머릿속에서
+    # 옮겨야 해서, 전술이 늘어날수록 어느 쪽이 뭔지 헷갈립니다.
+    _a_name = _live_name()
+    _b_name = other.name
+
+    def _cell(text: str, is_winner: bool, bar_pct: float | None) -> str:
+        # 값 아래 얇은 막대. "124만" 과 "41.7만" 이 몇 배인지 한눈에 보이게 합니다.
+        bar = ""
+        if bar_pct is not None:
+            bar = f"<span class='b'><i style='width:{bar_pct:.2f}%'></i></span>"
+        return (f"<td class='v{' win' if is_winner else ''}'>"
+                f"<span class='n'>{html.escape(text)}</span>{bar}</td>")
+
+    _rows_html = []
+    _all_rows = compare_service.rows(comp, b_comp)
+    for _idx, row in enumerate(_all_rows):
+        win = row.winner
+        bars = row.bars
+        # 비교해도 되는 줄(분배금·분배율)과 그냥 사실인 줄 사이에 선을 하나 긋습니다.
+        # 어디까지가 "많을수록 원하던 것" 인지가 선 하나로 보입니다.
+        sep = (_idx + 1 < len(_all_rows)
+               and row.higher_is_what_you_asked_for
+               and not _all_rows[_idx + 1].higher_is_what_you_asked_for)
+        _rows_html.append(
+            f"<tr{' class=\"sep\"' if sep else ''}>"
+            f"<td class='k'>{html.escape(row.label)}</td>"
+            + _cell(row.a_text, win == "a", bars[0] if bars else None)
+            + _cell(row.b_text, win == "b", bars[1] if bars else None)
+            + "</tr>"
+        )
+    st.markdown(
+        "<table class='cmp'><thead><tr><th></th>"
+        f"<th class='who mine'>{html.escape(_a_name)}"
+        f"<span class='now'>지금 보는 것</span></th>"
+        f"<th class='who'>{html.escape(_b_name)}</th></tr></thead><tbody>"
+        + "".join(_rows_html) + "</tbody></table>",
+        unsafe_allow_html=True,
+    )
+    dialog_note("초록은 <b>월 분배금·분배율</b> 처럼 '많을수록 원하던 것' 인 줄에만 "
+                "칠합니다. 커버드콜 비중이나 종목 수는 많다고 좋은 게 아니라서 "
+                "칠하지 않습니다.")
+
+    _goal_line = compare_service.goal_progress_line(
+        comp, b_comp, float(st.session_state.get("goal_monthly_krw") or 0.0))
+    if _goal_line:
+        note(f"<b>{html.escape(_b_name)}</b> 으로 바꾸면 — {html.escape(_goal_line)}")
+
+    _both = compare_service.overlap(comp, b_comp)
+    if _both:
+        dialog_note(f"<b>둘 다 담은 종목 {len(_both)}개</b> — "
+                    + " · ".join(html.escape(n) for n in _both))
+    else:
+        dialog_note("겹치는 종목이 없습니다.")
+
+    # 전술판처럼 이 표도 그림으로 복사·저장할 수 있게 합니다.
+    _cap1, _cap2 = st.columns([1.6, 1])
+    with _cap2:
+        table_capture(
+            title="두 전술 비교",
+            subtitle=f"{_a_name}  vs  {_b_name} · {config.today_local():%Y-%m-%d} 기준",
+            sections=[{"columns": ["", _a_name, _b_name],
+                       "rows": compare_service.capture_rows(comp, b_comp)}],
+            notes=([_goal_line] if _goal_line else [])
+                  + ["초록은 '많을수록 원하던 것' 인 줄에만 칠했습니다.",
+                     ("둘 다 담은 종목 — " + " · ".join(_both)) if _both
+                     else "겹치는 종목이 없습니다."],
+            footer=f"⚽ {config.app_name()} · {config.APP_PUBLIC_URL}",
+            filename=config.table_image_filename("비교", _a_name),
+            key="cmp_capture",
+        )
+    with _cap1:
+        if st.button("닫기", width="stretch", key="cmp_close"):
+            _close_compare()
+            st.rerun()
+
+
+if st.session_state.get("cmp_open"):
+    _compare_dialog(int(st.session_state.get("cmp_target", 0)))
 
 # ---- 중: 전술판 (세로, FM 풍 포지션 슬롯) -----------------------------
 with col_mid:
     warn_ids = {r.security.id for r in comp.rows if r.warnings}
+    # 주장 완장 = 비중이 가장 큰 종목. 축구 화면에서 완장의 뜻은 설명이 필요 없고,
+    # "이 포트의 중심이 뭔지" 가 한눈에 보입니다.
+    _captain_id = formation_service.captain_id(P)
     # 카드 = 유니폼. 색(운용사 브랜드/성조기)과 줄인 이름은 pitch_kit 이 정합니다.
     players_payload = [{
         "id": s.id, "ticker": s.ticker, "display_name": s.display_name, "market": s.market,
@@ -554,6 +1199,7 @@ with col_mid:
         "weight_pct": s.target_weight * 100.0,
         "slot": s.slot,
         "has_warning": s.id in warn_ids,
+        "captain": s.id == _captain_id,
     } for s in P.securities]
 
     # ---- 📸 캡처 이미지에만 구워지는 부분 (화면에는 안 나옴) --------------------
@@ -611,6 +1257,7 @@ with col_mid:
         sid = result.get("selected_id")
         if sid and sid != st.session_state.selected_id and P.get(sid) is not None:
             st.session_state.selected_id = sid
+            _dismiss_preset_confirm()
             st.rerun()
 
     if comp.weight_is_over:
@@ -618,6 +1265,70 @@ with col_mid:
     elif comp.cash_weight > 0:
         st.info(f"살(BUY) 비율 합계 {comp.weight_total*100:.2f}% · 나머지 "
                 f"{comp.cash_weight*100:.2f}% 는 현금으로 남습니다.")
+
+    # ---- 내가 뭘 담았나 (구성 막대 + 성향) --------------------------------
+    # 표를 읽는 것과 막대 세 줄을 보는 것은 전혀 다릅니다.
+    composition_bars(comp)
+
+    # ---- 같은 지수를 여러 번 담았나 ---------------------------------------
+    # 나스닥100 커버드콜을 셋 담아놓고 분산했다고 생각하는 경우가 많습니다.
+    # 평가가 아니라 "자기가 뭘 담았는지" 를 보이게 하는 것입니다.
+    _ov = overlap_service.check(P)
+    if _ov.has_overlap:
+        _lines = []
+        for _g in _ov.groups:
+            _who = " · ".join(f"{html.escape(n)} {w:.0f}%" for n, w in _g.members)
+            _lines.append(
+                f"<div class='ov-row'><span class='ov-tag'>{html.escape(_g.index_name)}</span>"
+                f"<span class='ov-pct'>{_g.total_pct:.0f}%</span></div>"
+                f"<div class='ov-who'>{_who}</div>")
+        st.markdown(
+            "<div class='ov-box'><div class='ov-head'>⚠ 같은 지수를 여러 번 담았습니다</div>"
+            + "".join(_lines) + "</div>",
+            unsafe_allow_html=True,
+        )
+    if _ov.unknown:
+        # ⚠ 이 줄이 이 기능의 양심입니다. 표에 없는 종목을 조용히 빼고 "겹치는 것
+        #   없음" 이라고 하면 그게 거짓말입니다. **"확인 못 함" 과 "안 겹침" 은
+        #   다른 말**입니다.
+        st.caption(f"**확인 못 한 종목 {len(_ov.unknown)}개** — "
+                   + " · ".join(_ov.unknown)
+                   + " · 기초지수 정보가 없어서 겹치는지 **모릅니다**. "
+                     "(겹치지 않는다는 뜻이 아닙니다)")
+
+    # ---- 포메이션 · 자동 정리 · 이름 추천 ---------------------------------
+    if P.securities:
+        _shape = formation_service.formation(P)
+        _fc1, _fc2 = st.columns([1.25, 1])
+        with _fc1:
+            if _shape:
+                st.caption(f"지금 배치 **{_shape}** "
+                           f"<span style='opacity:.7'>(수비-미드-공격)</span>",
+                           unsafe_allow_html=True)
+        with _fc2:
+            # ⚠ 절대 자동으로 옮기지 않습니다. 사용자가 손으로 맞춰둔 배치를 앱이
+            #   말없이 흐트러뜨리면 화가 납니다. 눌렀을 때만 움직입니다.
+            if st.button("⚽ 포지션 자동 정리", key="tidy_btn", width="stretch",
+                         help="커버드콜·리츠는 공격, 배당주는 중앙, 채권은 수비로 "
+                              "옮깁니다. 비중이 큰 종목이 가운데로 갑니다."):
+                _moved = formation_service.tidy(P)
+                st.session_state["tidy_note"] = (
+                    f"{_moved}개 종목을 자리에 맞게 옮겼습니다. 배치 "
+                    f"{formation_service.formation(P)}" if _moved
+                    else "이미 자리에 맞게 놓여 있습니다.")
+                st.rerun()
+        _tidy_note = st.session_state.pop("tidy_note", None)
+        if _tidy_note:
+            st.caption(_tidy_note)
+
+        # 슬롯이 생기면서 이름 지을 일이 자주 생깁니다. "새 전술 (2)" 가 쌓이면
+        # 슬롯이 무용지물이 되므로, 담은 내용으로 기본 이름을 만들어 줍니다.
+        _suggestion = formation_service.suggest_name(P, comp)
+        if _suggestion and _suggestion != P.name:
+            if st.button(f"✏️ 전술명을 '{_suggestion}' 로", key="name_suggest",
+                         width="stretch"):
+                st.session_state["pending_tactic_name"] = _suggestion
+                st.rerun()
 
     # ---- 📋 텍스트 (사용자 요청) ----------------------------------------------
     # 네이버 댓글처럼 **이미지 첨부가 아예 안 되는 곳**이 많습니다. 📸 복사는
@@ -712,6 +1423,7 @@ with col_right:
                      key=f"remove_{sel.id}"):
             P.remove(sel.id)
             st.session_state.selected_id = None
+            _dismiss_preset_confirm()
             # 이 종목에 딸린 입력칸 상태도 같이 정리 (남아 있으면 다음 종목에 영향)
             for _k in (f"buy_{sel.id}", f"buy_nonce_{sel.id}",
                        f"wsel_{sel.id}", f"wsel_num_{sel.id}", f"lbl_{sel.id}"):
@@ -804,18 +1516,21 @@ with b1:
         width="stretch",
     )
 with b2:
-    up = st.file_uploader("📂 전술 불러오기 (JSON)", type=["json"], label_visibility="collapsed")
+    up = st.file_uploader("📂 전술 불러오기 (JSON · ZIP)", type=["json", "zip"],
+                          label_visibility="collapsed")
     if up is not None:
         sig = (up.name, up.size)
         if sig != st.session_state.last_upload_sig:
             st.session_state.last_upload_sig = sig
-            res = tactic_service.from_json(up.getvalue())
+            # 전술 한 개(JSON)면 지금 슬롯만 바꾸고, 백업(ZIP)이면 슬롯 전체를 되살립니다.
+            res = slot_service.read_upload(up.name, up.getvalue())
             if res.ok:
-                st.session_state.portfolio = res.portfolio
-                st.session_state.selected_id = None
-                _reset_widgets_on_load()
+                _apply_slots(res.slots, replace_all=res.replace_all)
+                # ⚠ 여기서 st.info() 를 부르면 바로 아래 st.rerun() 이 화면을 다시
+                # 그리면서 그 메시지를 지워버립니다. 세션에 넣어뒀다가 다시 그린
+                # 화면에서 보여줘야 사용자 눈에 들어옵니다.
                 if res.message:
-                    st.info(res.message)
+                    st.session_state["tactic_load_note"] = res.message
                 st.rerun()
             else:
                 st.error(res.message)
@@ -848,13 +1563,33 @@ with st.expander("📈 예전부터 해봤다면? (그냥 사서 계속 갖기)"
 
     f1, f2, f3 = st.columns([1, 1, 1])
     with f1:
-        bt_start = st.date_input("시작일", value=date(2021, 1, 4), key="bt_start",
-                                 min_value=date(1990, 1, 1), max_value=date.today())
+        # key 로 값을 이미 넣어둔 상태에서 value= 까지 주면 Streamlit 이 경고를 남깁니다
+        # ("created with a default value but also had its value set via the Session
+        # State API"). 동작은 하지만 로그가 지저분해지고, 나중에 진짜 문제를 이 경고
+        # 더미 속에서 못 찾게 됩니다. 처음 만들 때만 value 를 줍니다.
+        _start_kw = ({} if "bt_start" in st.session_state
+                     else {"value": date(2021, 1, 4)})
+        bt_start = st.date_input("시작일", key="bt_start",
+                                 min_value=date(1990, 1, 1), max_value=date.today(),
+                                 **_start_kw)
     with f2:
         bt_cap = money_input("초기 투자금 (₩)", key="money_bt_capital",
                              default_value=P.initial_capital_krw, min_value=0)
     with f3:
-        bt_incl = st.checkbox("분배금 포함 (현금 수령, 재투자 없음)", value=False)
+        # 기본값을 켜둡니다. 여기 오는 사람은 대부분 **배당 포트폴리오**를 짜고 있고,
+        # 분배금을 빼면 그 포트폴리오의 핵심 수익원이 통째로 빠진 숫자가 됩니다.
+        # 더 나쁜 건 비교가 망가진다는 것입니다 -- 가격만 보면 고배당 ETF 는 성장주
+        # ETF 에 항상 지는 것처럼 보입니다. 분배금으로 돌려준 몫이 주가에서 빠져
+        # 있으니까요. 끄고 싶은 사람은 언제든 끌 수 있게 체크박스는 그대로 둡니다.
+        bt_incl = st.checkbox(
+            "분배금 포함 (현금 수령, 재투자 없음)", value=True,
+            help="받은 분배금을 **현금으로 쌓아서** 더합니다(세전). 다시 사는 것으로 "
+                 "치지 않으므로 '총수익률(재투자)'보다는 낮게 나옵니다. "
+                 "끄면 주가 변동만 봅니다.")
+
+    # 지금 화면이 어떤 조건인지를 한 덩어리로 묶어둡니다. 결과를 저장할 때 같이
+    # 넣어두고, 나중에 다시 그릴 때 비교해서 "낡았는지"를 판단합니다.
+    _bt_now = _backtest_signature(P, bt_start, bt_cap, bt_incl)
 
     # 날짜를 고쳐 넣은 직후에는 사용자가 "실행하기"를 한 번 더 누르지 않아도 되게 자동 실행.
     _autorun = st.session_state.pop("bt_autorun", False)
@@ -867,9 +1602,26 @@ with st.expander("📈 예전부터 해봤다면? (그냥 사서 계속 갖기)"
                     P, bt_start, initial_capital_krw=float(bt_cap),
                     include_distributions=bt_incl)
             st.session_state["bt_result"] = r
+            st.session_state["bt_signature"] = _bt_now
+            # 결과에 "무엇을 돌린 것인지"를 항상 붙입니다. 이 줄은 화면을 캡처해
+            # 공유할 때도 같이 나가서, 받는 사람이 조건을 알 수 있습니다.
+            st.session_state["bt_context"] = (
+                f"{len(P.securities)}종목 · 시드 {won(float(bt_cap))} · "
+                f"{bt_start} 부터 · 분배금 {'포함' if bt_incl else '미포함'} · "
+                f"{config.now_local():%Y-%m-%d %H:%M} 실행"
+            )
 
     r = st.session_state.get("bt_result")
     if r is not None:
+        # ---- 낡은 결과 안내 (지우지는 않습니다) ----------------------------
+        # 종목을 지우거나 시드를 바꿔도 예전 결과가 그대로 남아 있어서, 바뀐 줄
+        # 알고 옛날 숫자를 읽는 일이 잦았습니다. 그렇다고 결과를 지워버리면
+        # "방금 본 게 어디 갔지" 가 되고 비교도 못 합니다. 남겨두되 말해줍니다.
+        if st.session_state.get("bt_context"):
+            st.caption(f"↩ 돌린 조건: {st.session_state['bt_context']}")
+        if st.session_state.get("bt_signature") != _bt_now:
+            st.warning("⚠ 이 결과는 **지금 화면과 다른 조건**으로 돌린 것입니다. "
+                       "종목·시드·기간이 바뀌었어요. '실행하기'를 다시 눌러주세요.")
         if not r.ok:
             st.error(r.message)
             # 상장이 늦은 종목 때문에 막힌 경우: 날짜를 직접 옮겨 적지 않아도 되게
@@ -881,10 +1633,47 @@ with st.expander("📈 예전부터 해봤다면? (그냥 사서 계속 갖기)"
                     st.session_state["bt_autorun"] = True
                     st.rerun()
         else:
+            # ---- 한 문장 요약 (사용자 요청) --------------------------------
+            # 표를 읽기 전에 "그래서 어땠는데?" 에 먼저 답합니다.
+            # ⚠ 최대낙폭을 수익과 **같은 크기로** 씁니다. 수익만 크게 쓰면 앱이
+            #   아니라 광고가 됩니다. 저 결과를 얻으려면 그 구간을 견뎌야 했습니다.
+            _bt_years = ((r.data_as_of - r.actual_buy_date).days / 365.25
+                         if r.actual_buy_date and r.data_as_of else 0.0)
+            _line = (f"{r.actual_buy_date:%Y년 %m월}부터 {r.data_as_of:%Y년 %m월}까지"
+                     f"({_bt_years:.1f}년) 이 구성이었다면, "
+                     f"{won_short(r.initial_capital_krw)} 이 "
+                     f"<b>{won_short(r.final_value_krw)}</b> 이 됐습니다.")
+            # 분배금을 켜두는 것이 기본이라, **저 숫자에 무엇이 들어 있는지**를
+            # 같이 말해야 합니다. 안 그러면 주가만 계산한 다른 곳 숫자와 나란히
+            # 놓고 "여기가 더 좋네" 로 읽힙니다.
+            if r.include_distributions and r.distributions_cash_krw > 0:
+                # 조사는 "은" 으로 고정합니다. won_short() 는 항상 억/만/원 으로
+                # 끝나고 셋 다 받침이 있어서, 규칙을 만들 필요가 없습니다.
+                _line += (f" 이 중 <b>{won_short(r.distributions_cash_krw)}</b> 은 "
+                          f"받은 분배금(세전)을 다시 사지 않고 현금으로 쌓은 것입니다.")
+            if r.max_drawdown_pct < 0:
+                _line += (f" 도중에 고점 대비 <b>{r.max_drawdown_pct:.1f}%</b> 까지 "
+                          f"빠진 구간이 있었습니다"
+                          + (f" ({r.max_drawdown_date:%Y년 %m월})" if r.max_drawdown_date
+                             else "")
+                          # 낙폭은 쌓인 분배금을 빼고 잽니다. 넣으면 하락이 실제보다
+                          # 작아 보입니다(_max_drawdown 참고). 기준이 다르니 말해둡니다.
+                          + (" — 쌓인 분배금은 빼고 잰 값입니다."
+                             if r.include_distributions and r.distributions_cash_krw > 0
+                             else "."))
+            note(_line)
+
             st.markdown("**BACKTEST RESULT**")
             g1, g2, g3 = st.columns(3)
             g1.metric("초기 투자금", won(r.initial_capital_krw))
-            g2.metric("최종 평가금액", won(r.final_value_krw))
+            # "평가금액" 한 칸에 주식·현금·분배금을 뭉쳐 놓으면, 얼마가 주가로 번 것이고
+            # 얼마가 통장에 쌓인 현금인지 알 수가 없습니다. 합계는 합계라고 부르고,
+            # 바로 아래에서 셋으로 쪼개서 보여줍니다 (사용자 요청).
+            g2.metric("최종 자산 (합계)", won(r.final_value_krw),
+                      help="주식 평가액 + 잔여현금"
+                           + (" + 받은 분배금(세전, 재투자 없음)"
+                              if r.include_distributions else "")
+                           + ". 바로 아래에 쪼개서 적어뒀습니다.")
             # 시드의 일부만 담았으면 "전체 기준 수익률"은 현금에 희석돼 아주 작게 나옵니다.
             # (예: 1억 중 450만원만 담아 종목이 +21% 여도 전체로는 +1%)
             # 그래서 실제로 넣은 돈 기준 수익률을 같이 보여줍니다.
@@ -903,15 +1692,27 @@ with st.expander("📈 예전부터 해봤다면? (그냥 사서 계속 갖기)"
                     f"남은 현금까지 포함하면 전체 기준 수익률은 "
                     f"<b>{r.return_pct:+.2f}%</b> 입니다."
                 )
+            # ---- 위 '최종 자산' 을 쪼갠 것 -------------------------------
+            # 이 칸들을 더하면 **정확히** 위 합계가 됩니다. 성격이 다른 돈이라
+            # 뭉쳐놓으면 안 됩니다 -- 주식은 오르내리지만 쌓인 현금은 안 움직입니다.
+            st.caption("최종 자산을 쪼개면")
+            if r.include_distributions:
+                b1, b2, b3 = st.columns(3)
+                b3.metric("받은 분배금 (세전)", won(r.distributions_cash_krw),
+                          help="구간 중 받은 분배금을 다시 사지 않고 현금으로 쌓은 것입니다. "
+                               "세금은 빼지 않았습니다.")
+            else:
+                b1, b2 = st.columns(2)
+            b1.metric("주식 평가액", won(r.holdings_value_krw),
+                      help="종료일 종가 x 보유수량 (미국 종목은 그날 환율로 원화 환산).")
+            b2.metric("잔여현금", won(r.cash_balance_krw),
+                      help="시드 중 종목에 못 들어가고 남은 돈입니다.")
+
             h1, h2, h3 = st.columns(3)
             h1.write(f"입력일: {r.input_start}")
             h2.write(f"실제 매수 기준일: {r.actual_buy_date}")
             h3.write(f"{config.DATA_AS_OF_LABEL}: {r.data_as_of}")
-            h4, h5, h6 = st.columns(3)
-            h4.write(f"총 원금: {won(r.total_invested_krw)}")
-            h5.write(f"잔여현금: {won(r.cash_balance_krw)}")
-            if r.include_distributions:
-                h6.write(f"분배금 누적(현금): {won(r.distributions_cash_krw)}")
+            st.write(f"총 원금: {won(r.total_invested_krw)}")
             btdf = pd.DataFrame([{
                 # 위 "어떻게 살까?" 표와 같은 규칙. 한국 종목은 티커가 종목코드라
                 # 그대로 쓰면 "458730" 처럼 떠서 뭘 백테스트한 건지 알 수가 없습니다.
@@ -927,6 +1728,25 @@ with st.expander("📈 예전부터 해봤다면? (그냥 사서 계속 갖기)"
                 "지금 환율": (f"{x.final_fx:,.2f}" if x.final_fx else "–"),
             } for x in r.rows])
             st.dataframe(btdf, width="stretch", hide_index=True)
+
+            # 백테스트 결과도 전술판처럼 그림으로 복사·저장할 수 있게 합니다.
+            # ⚠ 낙폭이 빠진 그림은 만들지 않습니다(backtest_service.capture_rows 참고).
+            # 저장 버튼을 누른 사람은 "지금 보고 있는 이 화면" 이 저장될 거라고
+            # 생각합니다. 그래서 요약뿐 아니라 **종목별 표까지** 같이 담습니다.
+            _bt1, _bt2 = st.columns([2.2, 1])
+            with _bt2:
+                table_capture(
+                    title="📈 백테스트 결과",
+                    subtitle=(f"{P.name} · {len(r.rows)}종목 · 그냥 사서 계속 갖기 · "
+                              f"{r.actual_buy_date} 매수 · "
+                              f"{config.DATA_AS_OF_LABEL} {r.data_as_of}"),
+                    sections=backtest_service.capture_sections(r),
+                    notes=backtest_service.capture_notes(r),
+                    footer=f"⚽ {config.app_name()} · {config.APP_PUBLIC_URL}",
+                    filename=config.table_image_filename("백테스트", P.name),
+                    key="bt_capture",
+                )
+
             for w in r.warnings:
                 st.caption("· " + w)
 
@@ -939,3 +1759,18 @@ st.caption(
     "포트폴리오 금액은 항상 원화(₩)로 환산해 표시합니다. "
     "본 도구는 포트폴리오 구성·계산 도구이며 투자 판단·추천을 제공하지 않습니다."
 )
+
+# =====================================================================
+# 브라우저에 저장 (맨 마지막)
+# =====================================================================
+# ⚠ 반드시 화면을 다 그린 뒤여야 합니다. 이번에 사용자가 고친 값들이 P 에 반영되는
+#    건 위쪽 위젯들이 다 돌고 난 다음이라, 맨 위에서 저장하면 한 박자 전 내용이
+#    저장됩니다.
+# 값이 바뀔 때만 브라우저가 답을 올려보내도록 컴포넌트 쪽에서 막아놨습니다.
+# 안 그러면 슬라이더를 한 번 움직일 때마다 화면이 두 번 그려집니다.
+_save_slots, _save_active = _slots_snapshot()
+st.session_state["slots"] = _save_slots
+local_store(mode="write", key="ls_write", data=slot_service.dumps(slot_service.StoreState(
+    slots=_save_slots, active=_save_active,
+    goal_monthly_krw=float(st.session_state.get("goal_monthly_krw") or 0.0),
+)))

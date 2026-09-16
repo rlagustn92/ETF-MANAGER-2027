@@ -28,6 +28,22 @@ def money(x: float) -> float:
     return round(float(x), MONEY_DECIMALS)
 
 
+def _finite(x: object, default: float = 0.0) -> float:
+    """계산 직전의 마지막 방어선. 숫자가 아니거나 NaN·무한대면 default.
+
+    모델(models/numbers.py)에서 이미 한 번 거르지만, 여기로는 **시세 API 가 준 값**도
+    들어옵니다. yfinance 는 실제로 종가에 NaN 을 섞어 주는 일이 있습니다.
+    여기서 안 막으면 math.floor(nan) 에서 화면 전체가 죽습니다.
+    """
+    if isinstance(x, bool) or x is None:
+        return float(default)
+    try:
+        v = float(x)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return float(default)
+    return v if math.isfinite(v) else float(default)
+
+
 # =====================================================================
 # 매수 계산
 # =====================================================================
@@ -36,6 +52,8 @@ def calculate_target_amount(initial_capital: float, target_weight: float) -> flo
 
     target_weight 는 비율(0.30 == 30%). 초기자본/비중이 음수면 오류.
     """
+    initial_capital = _finite(initial_capital)
+    target_weight = _finite(target_weight)
     if initial_capital < 0:
         raise ValueError("초기자본은 0 이상이어야 합니다.")
     if target_weight < 0:
@@ -50,6 +68,10 @@ def calculate_integer_shares(target_amount: float, price_per_share: float) -> in
     가격 정보가 없으면(<= 0) 계산 불가로 보고 ValueError 를 던집니다.
     상위 서비스가 "데이터 없음" 을 먼저 처리해야 합니다.
     """
+    # NaN 가격은 "가격이 없다"와 같은 뜻입니다. (NaN <= 0 은 False 라 그냥 두면
+    # 아래 math.floor() 까지 흘러가서 앱이 죽습니다)
+    price_per_share = _finite(price_per_share, default=0.0)
+    target_amount = _finite(target_amount, default=0.0)
     if price_per_share <= 0:
         raise ValueError("1주 가격이 없거나 0 이하입니다. 수량을 계산할 수 없습니다.")
     if target_amount <= 0:
@@ -62,6 +84,8 @@ def calculate_fractional_shares(target_amount: float, price_per_share: float) ->
 
     1차 버전 기본값은 정수 매수(OFF)이며, 이 함수는 확장용입니다. (인수인계서 29)
     """
+    price_per_share = _finite(price_per_share, default=0.0)
+    target_amount = _finite(target_amount, default=0.0)
     if price_per_share <= 0:
         raise ValueError("1주 가격이 없거나 0 이하입니다. 수량을 계산할 수 없습니다.")
     if target_amount <= 0:
@@ -71,6 +95,8 @@ def calculate_fractional_shares(target_amount: float, price_per_share: float) ->
 
 def calculate_actual_investment(shares: float, price_per_share: float) -> float:
     """실제 투자금 = 실제 수량 x 1주 가격."""
+    shares = _finite(shares)
+    price_per_share = _finite(price_per_share)
     if shares < 0:
         raise ValueError("수량은 0 이상이어야 합니다.")
     if price_per_share < 0:
@@ -125,6 +151,8 @@ def calculate_annual_distribution(shares: float, ttm_per_share: float) -> float:
     ttm_per_share 는 "기준 통화(KRW)" 로 환산된 값이어야 합니다.
     미국 ETF 는 상위 서비스가 USD 합계 x 현재 USD/KRW 로 환산해서 넘깁니다. (인수인계서 43)
     """
+    shares = _finite(shares)
+    ttm_per_share = _finite(ttm_per_share)
     if shares < 0:
         raise ValueError("수량은 0 이상이어야 합니다.")
     if ttm_per_share < 0:
@@ -185,10 +213,53 @@ def calculate_distribution_yield(ttm_per_share: float | None,
 
 
 # =====================================================================
+# "월 ○○만원 받기" 목표까지 얼마나 왔나
+# =====================================================================
+# 왜 시드를 기준으로 계산하나
+# ---------------------------
+# 지금 구성(종목·비중)을 그대로 두고 **시드만** 키우면 모든 금액이 같은 배로 커집니다.
+# 그래서 필요한 시드는 간단한 비례식으로 나옵니다.
+#
+#     필요 시드 = 지금 시드 x (목표 월분배금 / 지금 월분배금)
+#
+# 담지 않고 남긴 현금이 있어도 그 현금까지 같이 커지므로 비율이 유지됩니다.
+# (정수 주식 반올림 때문에 실제로는 아주 미세하게 달라질 수 있습니다)
+#
+# ⚠ 이건 **"이렇게 하면 됩니다"가 아니라 지금 구성 기준 산수**입니다.
+#    분배율이 달라지면 결과도 달라집니다. 화면에도 그렇게 적어야 합니다.
+
+
+def progress_to_goal(monthly_now_krw: float, monthly_target_krw: float) -> float:
+    """목표 대비 지금 어디까지 왔나 (0.0 ~ 1.0 이상). 목표가 없으면 0."""
+    target = _finite(monthly_target_krw)
+    if target <= 0:
+        return 0.0
+    return max(0.0, _finite(monthly_now_krw) / target)
+
+
+def capital_needed_for_goal(capital_now_krw: float, monthly_now_krw: float,
+                            monthly_target_krw: float) -> float | None:
+    """목표 월분배금을 만들려면 시드가 얼마여야 하는가. 계산할 수 없으면 None.
+
+    지금 분배금이 0 이면(담은 게 없거나 분배금 데이터가 없으면) 비례식을 세울
+    기준이 없습니다. 이때 아무 숫자나 내놓으면 그건 지어낸 값입니다.
+    """
+    capital = _finite(capital_now_krw)
+    monthly_now = _finite(monthly_now_krw)
+    target = _finite(monthly_target_krw)
+    if capital <= 0 or monthly_now <= 0 or target <= 0:
+        return None
+    return money(capital * (target / monthly_now))
+
+
+# =====================================================================
 # USD -> KRW 환산 헬퍼 (환율은 fx_service 가 조회, 여기서는 곱셈만)
 # =====================================================================
 def to_krw(amount_usd: float, usdkrw: float) -> float:
     """USD 금액을 원화로 환산. 환율이 없으면(<= 0) 오류. (인수인계서 52, 117)"""
-    if usdkrw is None or usdkrw <= 0:
+    # NaN·무한대 환율도 "환율이 없다"로 봅니다. fx_service 가 앞에서 걸러주지만,
+    # 이 함수는 다른 곳에서도 불리므로 여기서도 같은 기준을 지킵니다.
+    rate = _finite(usdkrw, default=0.0)
+    if usdkrw is None or rate <= 0:
         raise ValueError("USD/KRW 환율 데이터가 없어 원화로 환산할 수 없습니다.")
-    return amount_usd * usdkrw
+    return _finite(amount_usd) * rate

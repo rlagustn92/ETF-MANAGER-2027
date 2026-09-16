@@ -84,6 +84,16 @@
   .card .warn { position: absolute; top: -2px; right: 2px; width: 8px; height: 8px;
     border-radius: 50%; background: #e23b3b; border: 1px solid #fff; }
 
+  /* 주장 완장 = 비중이 가장 큰 종목. 축구 화면에서 완장의 뜻은 설명이 필요 없고,
+     "이 포트의 중심이 뭔지" 가 한눈에 보입니다. */
+  .card .cap {
+    position: absolute; top: 1px; left: 1px;
+    font-size: 8px; font-weight: 800; line-height: 1;
+    background: #E8C34A; color: #3a2c05;
+    border-radius: 3px; padding: 1px 3px;
+    box-shadow: 0 0 0 1px rgba(0,0,0,.18);
+  }
+
   /* 카드에 마우스를 올리면 정식 이름 + 정확한 비율. 유니폼 등번호는 반올림한 값이고
      이름표는 줄인 이름이라, 원래 값을 확인할 곳이 필요합니다.
      ⚠ 전술판은 overflow:hidden 이라 말풍선이 판 밖으로 나가면 잘립니다. 그래서
@@ -99,6 +109,21 @@
   .card.tip-up   .tip { bottom: calc(100% + 4px); }
   .card.tip-down .tip { top: calc(100% + 4px); }
   #hint { margin-top: 6px; font-size: 12px; color: #8a8a8a; text-align: center; }
+
+  /* 아무것도 안 담았을 때 전술판 한가운데 뜨는 안내.
+     텅 빈 초록 화면은 "고장난 건가?" 로 읽힙니다. 뭘 하면 되는지 한 줄이 필요합니다.
+     pointer-events:none 이라 아래의 슬롯·드래그 동작을 방해하지 않습니다. */
+  #empty {
+    position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+    display: none; flex-direction: column; align-items: center; gap: 6px;
+    pointer-events: none; text-align: center; padding: 14px 18px;
+    background: rgba(0, 0, 0, 0.26); border-radius: 12px;
+    backdrop-filter: blur(1.5px);
+  }
+  #empty .big { font-size: 15px; font-weight: 800; color: #fff; letter-spacing: -0.01em; }
+  #empty .sub { font-size: 12px; color: rgba(255, 255, 255, 0.86); }
+  body.compact #empty .big { font-size: 13.5px; }
+  body.compact #empty .sub { font-size: 11px; }
 
   /* 컴팩트 모드 (레이아웃 실험용) -- 글씨만 살짝 축소, 배치 로직은 그대로 */
   body.compact #topbar, body.compact #botbar { font-size: 11.5px; }
@@ -139,9 +164,13 @@
       <rect x="443" y="1386" width="114" height="12" fill="#ffffff" stroke="#1f6f3a" stroke-width="3"/>
       <path d="M360 1140 A 170 170 0 0 1 640 1140" fill="none" stroke="var(--line)" stroke-width="3"/>
     </svg>
+    <div id="empty">
+      <span class="big">여기에 종목을 올리면 전술이 됩니다</span>
+      <span class="sub">왼쪽에서 검색하거나, 위의 예시를 한 번 눌러보세요</span>
+    </div>
   </div>
   <div id="botbar">🏠 우리 진영 · 골키퍼 ▼</div>
-  <div id="hint">카드를 잡아 포지션 슬롯에 놓으면 스냅됩니다. 다른 종목이 있으면 자리를 맞바꿉니다. 클릭하면 오른쪽에 상세정보가 열립니다.</div>
+  <div id="hint"></div>
 </div>
 
 <script>
@@ -428,9 +457,22 @@ function defaultKit(market) {
     : { style: "solid", brand: "", main: "#8E99A6", dark: "#4A535C", text: "#FFFFFF" };
 }
 
+// 담은 게 없을 때와 있을 때, 아래 안내 문구가 달라야 합니다. 카드가 하나도 없는데
+// "카드를 잡아 끌어놓으세요" 라고 하면 끌 게 없어서 무슨 말인지 모릅니다.
+const HINT_DRAG = "카드를 잡아 포지션 슬롯에 놓으면 스냅됩니다. "
+  + "다른 종목이 있으면 자리를 맞바꿉니다. 클릭하면 오른쪽에 상세정보가 열립니다.";
+const HINT_EMPTY = "점선은 아직 비어 있는 자리입니다. 종목을 담으면 여기에 놓입니다.";
+
 function render() {
   applyTagFont();
   pitch.querySelectorAll(".slot, .card").forEach(el => el.remove());
+
+  // 텅 빈 초록 화면은 "고장난 건가?" 로 읽힙니다. 뭘 하면 되는지 보여줍니다.
+  const isEmpty = players.length === 0;
+  const emptyEl = document.getElementById("empty");
+  if (emptyEl) emptyEl.style.display = isEmpty ? "flex" : "none";
+  const hintEl = document.getElementById("hint");
+  if (hintEl) hintEl.textContent = isEmpty ? HINT_EMPTY : HINT_DRAG;
 
   for (const s of slots) {
     const el = document.createElement("div");
@@ -455,6 +497,7 @@ function render() {
     const fullName = p.display_name || p.ticker || p.label;
     el.innerHTML =
       jerseySVG(p.kit, p.weight_pct, uid++) +
+      (p.captain ? '<span class="cap" title="비중이 가장 큰 종목">C</span>' : '') +
       (p.has_warning ? '<span class="warn" title="확인 필요"></span>' : '') +
       '<div class="tag" style="background:' + p.kit.dark + ';color:#fff">' +
         escapeHtml(p.label) + '</div>' +
@@ -678,6 +721,20 @@ async function buildPitchCanvas() {
     const cx = s.x * W, cy = barPx + s.y * pitchH;
     const topY = cy - totalH / 2;
     drawJersey(ctx, cx, topY, jerseyW, p.kit, p.weight_pct);
+
+    // 주장 완장. 화면(.card .cap)과 **같은 자리, 같은 색**이어야 합니다. 캡처에만
+    // 없으면 공유한 그림이 화면과 달라 보입니다.
+    if (p.captain) {
+      const capW = 11 * scale, capH = 8 * scale;
+      const capX = cx - jerseyW / 2, capY = topY + 1 * scale;
+      ctx.fillStyle = "#E8C34A";
+      roundRect(ctx, capX, capY, capW, capH, 2 * scale);
+      ctx.fill();
+      ctx.fillStyle = "#3a2c05";
+      ctx.font = `800 ${6.5 * scale}px ${FONT}`;
+      ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      ctx.fillText("C", capX + capW / 2, capY + capH / 2 + 0.3 * scale);
+    }
 
     // 이름표
     const tagY = topY + jerseyH + 2 * scale;
@@ -918,6 +975,7 @@ Streamlit.onRender((args) => {
     weight_pct: (p.weight_pct === null || p.weight_pct === undefined) ? null : Number(p.weight_pct),
     slot: String(p.slot || ""),
     has_warning: !!p.has_warning,
+    captain: !!p.captain,
   }));
   selectedId = (args.selected_id === undefined) ? selectedId : args.selected_id;
 

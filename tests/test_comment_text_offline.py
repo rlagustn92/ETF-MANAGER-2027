@@ -76,10 +76,22 @@ def test_text_always_says_pre_tax_and_the_date(market):
     assert f"{config.today_local():%Y-%m-%d}" in txt
 
 
-def test_text_ends_with_the_app_address(market):
-    """댓글로 퍼질 때 어디서 만든 건지 따라올 수 있어야 합니다."""
+def test_text_ends_with_a_link_that_opens_this_very_portfolio(market):
+    """댓글에 붙는 이 한 줄이 **이 앱에서 사람을 데려오는 유일한 통로**입니다.
+
+    캡처 이미지에는 링크를 걸 수 없습니다(그림 속 글자는 못 누릅니다).
+    그래서 주소만 있으면 안 되고, 그 주소가 **이 포트폴리오를 그대로 열어야** 합니다.
+    """
     import config
-    assert _text(_run(market)).rstrip().endswith(config.APP_PUBLIC_URL)
+    from services import share_service
+
+    last_line = _text(_run(market)).rstrip().splitlines()[-1]
+    assert last_line.startswith(config.APP_PUBLIC_URL)
+
+    # 주소를 도로 읽으면 화면에 있던 그 종목·비중이 나와야 합니다.
+    got = share_service.decode(last_line.split("?p=", 1)[1])
+    assert [(i.market, i.ticker, i.weight_pct) for i in got] == [
+        ("US", "SCHD", 60.0), ("KR", "458730", 40.0)]
 
 
 def test_holdings_are_ordered_by_weight(market):
