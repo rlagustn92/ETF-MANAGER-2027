@@ -15,3 +15,13 @@ venv/
 # tactics/sample_*.json 은 예시라서 올립니다.
 tactics/*.json
 !tactics/sample_*.json
+
+# 나와 AI 가 볼 내부 문서 — 공개 저장소에 올리지 않습니다.
+#
+# CLAUDE.md 는 프로젝트 루트에 있어야 새 세션의 AI 가 자동으로 읽습니다.
+# 그래서 위치는 루트에 두되, 업로드만 막습니다.
+CLAUDE.md
+
+# .streamlit 폴더는 통째로 무시되는 곳이 아닙니다(config.toml 은 밝은 테마 고정 때문에
+# 반드시 올라가야 합니다). 그 안에 넣는 내부 기술문서만 따로 막습니다.
+.streamlit/*.md
