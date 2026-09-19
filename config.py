@@ -27,7 +27,7 @@ APP_YEAR: int = 2027
 
 # 프로그램 버전. 크든 작든 무언가 바꿀 때마다 맨 뒷자리를 1 올립니다
 # (1.0.0 -> 1.0.1 -> 1.0.2 ...). 화면 맨 위 제목 옆에 표시됩니다.
-APP_VERSION: str = "1.0.39"
+APP_VERSION: str = "1.0.40"
 
 
 def app_name() -> str:
@@ -46,6 +46,12 @@ def app_version_label() -> str:
 # 제목 옆 "개발자 피드백/버그제보" 링크가 열 주소. 바꾸려면 여기 한 줄만 고치면 됩니다.
 FEEDBACK_URL: str = "https://diycarebox.tistory.com/44"
 FEEDBACK_LABEL: str = "개발자 피드백/버그제보/비회원댓글가능"
+
+# 자매 서비스(베타). 이 앱은 "고른 종목으로 얼마 들어오나" 를 답해주지만,
+# "무엇을 고를까" 는 답해주지 않습니다. 그 질문은 여기로 보냅니다.
+# 주소가 바뀌면 여기 한 줄만 고치면 화면 두 곳이 같이 바뀝니다.
+INSIDE_URL: str = "https://etfinside.streamlit.app/"
+INSIDE_LABEL: str = "ETF 뭐살까 고민될땐? ETF INSIDE(BETA)"
 
 # 배포 주소. 📸 캡처 이미지 맨 아래에 찍혀서, 그 이미지가 커뮤니티로 퍼질 때
 # 어디서 만든 건지 따라가게 됩니다. 배포 주소가 바뀌면 여기 한 줄만 고치세요.

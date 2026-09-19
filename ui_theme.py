@@ -152,6 +152,30 @@ def inject() -> None:
           white-space: nowrap;
         }}
 
+        /* 자매 서비스(ETF INSIDE) 바로가기. 새로 연 서비스라 눈에는 띄어야 하지만,
+           화면의 주인공은 전술판이라 옅은 파랑 한 겹까지만 씁니다. */
+        .ext-link.inside {{
+          margin-left: 8px;
+          font-size: 12px;
+          vertical-align: middle;
+          white-space: nowrap;
+          color: #1a5fb4 !important;
+          border-color: rgba(26, 95, 180, 0.35);
+          background: rgba(26, 95, 180, 0.07);
+        }}
+        .ext-link.inside:hover {{ background: rgba(26, 95, 180, 0.14); }}
+
+        /* 좁은 칸(종목 검색 쪽)용. 제목 오른쪽에 그대로 붙이면 글자가 잘리므로
+           바로 아래 한 줄짜리 버튼으로 눕힙니다. 글자는 똑같습니다. */
+        .ext-link.inside.block {{
+          display: block;
+          margin: 2px 0 10px;
+          padding: 7px 8px;
+          text-align: center;
+          white-space: normal;
+          font-size: 12.5px;
+        }}
+
         /* 그냥 지나치면 숫자를 오해하게 되는 설명. 일반 캡션(연한 회색)으로 쓰면
            눈에 안 들어와서, 옅은 황토 배경 + 왼쪽 굵은 선으로 시선을 잡아둡니다. */
         .note {{

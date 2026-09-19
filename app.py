@@ -480,7 +480,9 @@ with tc1:
         f"<h2 class='app-title'>{config.app_name_with_icon()}"
         f"<span class='app-version'>{config.app_version_label()}</span>"
         f"<a class='ext-link feedback' target='_blank' rel='noopener noreferrer' "
-        f"href='{config.FEEDBACK_URL}'>{config.FEEDBACK_LABEL} ↗</a></h2>",
+        f"href='{config.FEEDBACK_URL}'>{config.FEEDBACK_LABEL} ↗</a>"
+        f"<a class='ext-link inside' target='_blank' rel='noopener noreferrer' "
+        f"href='{config.INSIDE_URL}'>{config.INSIDE_LABEL} ↗</a></h2>",
         unsafe_allow_html=True,
     )
 with tc2:
@@ -717,6 +719,13 @@ with col_left:
 
     st.divider()
     st.markdown("#### 종목 검색")
+    # 뭘 검색할지부터 막히는 사람이 제일 많습니다. 검색칸 바로 위에서 종목 고르는
+    # 서비스로 보내줍니다.
+    st.markdown(
+        f"<a class='ext-link inside block' target='_blank' rel='noopener noreferrer' "
+        f"href='{config.INSIDE_URL}'>{config.INSIDE_LABEL} ↗</a>",
+        unsafe_allow_html=True,
+    )
     q = st.text_input("검색어", placeholder="QQQ / 삼성전자 / 005930",
                       label_visibility="collapsed")
     mkt = st.radio("시장", ["전체", "미국", "한국"], horizontal=True, label_visibility="collapsed")
