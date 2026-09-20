@@ -55,6 +55,7 @@ from services import (
     compare_service,
     composition_service,
     formation_service,
+    naver_link_service,
     overlap_service,
     fx_service,
     portfolio_service,
@@ -763,13 +764,25 @@ with col_right:
         st.caption("왼쪽 목록이나 전술판에서 카드를 클릭하세요.")
     else:
         # 티커만 보고는 무슨 종목인지 모를 수 있어서(예: "O" = Realty Income),
-        # 전체 이름과 야후 파이낸스 바로가기를 함께 보여줍니다 (사용자 요청).
-        st.markdown(
-            f"**{html.escape(sel.display_name)}**  ·  `{html.escape(sel.ticker)}`  "
+        # 전체 이름과 증권 사이트 바로가기를 함께 보여줍니다 (사용자 요청).
+        #
+        # 네이버는 주소를 확인하지 못하면 None 이 옵니다. 그럴 때는 링크를 아예 안
+        # 그립니다 — 지어낸 주소로 보내면 사용자가 빈 페이지를 보게 됩니다.
+        # 칩 셋을 한 덩어리(ext-links)로 묶습니다. 안 묶으면 종목명 길이에 따라
+        # 마지막 칩만 혼자 다음 줄로 떨어져 나갑니다(SCHD 에서 실제로 그랬습니다).
+        _naver = naver_link_service.naver_url(sel.market, sel.ticker)
+        _links = (
             f"<a class='ext-link' target='_blank' rel='noopener noreferrer' "
             f"href='{presets.toss_invest_url(sel.market, sel.ticker)}'>토스 ↗</a> "
             f"<a class='ext-link' target='_blank' rel='noopener noreferrer' "
-            f"href='{presets.yahoo_finance_url(sel.market, sel.ticker)}'>야후 ↗</a>",
+            f"href='{presets.yahoo_finance_url(sel.market, sel.ticker)}'>야후 ↗</a>"
+        )
+        if _naver:
+            _links += (f" <a class='ext-link' target='_blank' rel='noopener noreferrer' "
+                       f"href='{html.escape(_naver, quote=True)}'>네이버 ↗</a>")
+        st.markdown(
+            f"**{html.escape(sel.display_name)}**  ·  `{html.escape(sel.ticker)}`  "
+            f"<span class='ext-links'>{_links}</span>",
             unsafe_allow_html=True,
         )
         _full_name = sel.name or ""

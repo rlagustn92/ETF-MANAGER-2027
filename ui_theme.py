@@ -143,6 +143,13 @@ def inject() -> None:
         }}
         .ext-link:hover {{ background: rgba(15, 42, 68, 0.10); }}
 
+        /* 종목 상세의 바로가기 칩 묶음(토스·야후·네이버).
+           셋이 되면서 좁은 칸에서 마지막 하나만 다음 줄로 떨어지는 일이 생겼습니다.
+           묶어서 nowrap 을 걸면 셋이 **함께** 움직여, 줄이 바뀌더라도 나란히 붙어
+           있습니다. 흩어진 칩보다 눈에 훨씬 잘 들어옵니다. */
+        .ext-links {{ white-space: nowrap; display: inline-block; }}
+        .ext-links .ext-link {{ font-size: 11.5px; padding: 1px 5px; margin-left: 1px; }}
+
         /* 제목 옆 피드백 링크: 제목 글자 크기를 따라가지 않도록 크기를 고정하고
            버전 표시와 같은 높이에 놓습니다. */
         .ext-link.feedback {{

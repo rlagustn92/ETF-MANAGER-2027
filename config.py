@@ -27,7 +27,7 @@ APP_YEAR: int = 2027
 
 # 프로그램 버전. 크든 작든 무언가 바꿀 때마다 맨 뒷자리를 1 올립니다
 # (1.0.0 -> 1.0.1 -> 1.0.2 ...). 화면 맨 위 제목 옆에 표시됩니다.
-APP_VERSION: str = "1.0.40"
+APP_VERSION: str = "1.0.41"
 
 
 def app_name() -> str:
@@ -138,6 +138,7 @@ CACHE_TTL_LATEST_PRICE_SECONDS: int = 60 * 15    # 최신가: 15분
 CACHE_TTL_FX_SECONDS: int = 60 * 60              # 환율: 1시간
 CACHE_TTL_DISTRIBUTION_SECONDS: int = 60 * 60 * 12  # 분배금 히스토리: 12시간
 CACHE_TTL_SEARCH_SECONDS: int = 60 * 60 * 24     # 종목 검색 목록: 24시간
+CACHE_TTL_NAVER_LINK_SECONDS: int = 60 * 60 * 24  # 네이버 증권 주소: 24시간
 
 CACHE_DIR_NAME: str = ".cache"
 
@@ -149,6 +150,12 @@ COUNTER_ENABLED: bool = True
 COUNTER_BASE_URL: str = "https://abacus.jasoncameron.dev"
 COUNTER_NAMESPACE_DEFAULT: str = "etfmanager2027"
 COUNTER_TIMEOUT_SECONDS: float = 2.5      # 느려도 화면을 오래 붙잡지 않도록 짧게
+
+# ---- 네이버 증권 바로가기 ------------------------------------------------
+# 미국 종목은 주소를 조립할 수 없어 네이버에 물어봐야 합니다(자세한 이유는
+# services/naver_link_service.py). 링크 하나 때문에 화면이 멈추면 안 되므로 짧게
+# 끊습니다. 실패하면 링크를 안 그릴 뿐 앱은 그대로 동작합니다.
+NAVER_TIMEOUT_SECONDS: float = 3.0
 
 # 환율 티커/심볼 (USD -> KRW)
 FX_PAIR_USDKRW: str = "USDKRW=X"     # yfinance 심볼. provider 구현 시 실행 검증.
