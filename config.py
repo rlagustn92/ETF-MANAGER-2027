@@ -27,7 +27,7 @@ APP_YEAR: int = 2027
 
 # 프로그램 버전. 크든 작든 무언가 바꿀 때마다 맨 뒷자리를 1 올립니다
 # (1.0.0 -> 1.0.1 -> 1.0.2 ...). 화면 맨 위 제목 옆에 표시됩니다.
-APP_VERSION: str = "1.0.41"
+APP_VERSION: str = "1.0.42"
 
 
 def app_name() -> str:
@@ -52,6 +52,12 @@ FEEDBACK_LABEL: str = "개발자 피드백/버그제보/비회원댓글가능"
 # 주소가 바뀌면 여기 한 줄만 고치면 화면 두 곳이 같이 바뀝니다.
 INSIDE_URL: str = "https://etfinside.streamlit.app/"
 INSIDE_LABEL: str = "ETF 뭐살까 고민될땐? ETF INSIDE(BETA)"
+
+# 또 다른 자매 서비스. 여기(전술판)에서 포트폴리오를 다 짠 다음,
+# "그래서 매달 언제 얼마가 들어오나" 를 급여명세서처럼 보여주는 곳입니다.
+# 주소가 바뀌면 여기 한 줄만 고치면 화면이 같이 바뀝니다.
+PAYSTUB_URL: str = "https://myetfpaystub.streamlit.app/"
+PAYSTUB_LABEL: str = "포트폴리오 다 짜고 관리할땐? MY ETF 급여명세서"
 
 # 배포 주소. 📸 캡처 이미지 맨 아래에 찍혀서, 그 이미지가 커뮤니티로 퍼질 때
 # 어디서 만든 건지 따라가게 됩니다. 배포 주소가 바뀌면 여기 한 줄만 고치세요.

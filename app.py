@@ -482,8 +482,15 @@ with tc1:
         f"<span class='app-version'>{config.app_version_label()}</span>"
         f"<a class='ext-link feedback' target='_blank' rel='noopener noreferrer' "
         f"href='{config.FEEDBACK_URL}'>{config.FEEDBACK_LABEL} ↗</a>"
+        # 자매 서비스 두 개(고르는 곳 -> 관리하는 곳)는 한 덩어리로 묶습니다.
+        # 문구가 길어서 그냥 두면 둘째 칩만 혼자 다음 줄로 떨어집니다. 묶어두면
+        # 줄이 바뀌더라도 **둘이 나란히** 같이 내려가서 한 쌍으로 읽힙니다.
+        f"<span class='sister-links'>"
         f"<a class='ext-link inside' target='_blank' rel='noopener noreferrer' "
-        f"href='{config.INSIDE_URL}'>{config.INSIDE_LABEL} ↗</a></h2>",
+        f"href='{config.INSIDE_URL}'>{config.INSIDE_LABEL} ↗</a>"
+        f"<a class='ext-link paystub' target='_blank' rel='noopener noreferrer' "
+        f"href='{config.PAYSTUB_URL}'>{config.PAYSTUB_LABEL} ↗</a>"
+        f"</span></h2>",
         unsafe_allow_html=True,
     )
 with tc2:

@@ -172,6 +172,33 @@ def inject() -> None:
         }}
         .ext-link.inside:hover {{ background: rgba(26, 95, 180, 0.14); }}
 
+        /* 자매 서비스(MY ETF 급여명세서) 바로가기. 바로 왼쪽의 ETF INSIDE 와
+           서로 다른 곳이라는 게 한눈에 보여야 해서 색만 옅은 초록으로 바꿉니다.
+           모양·크기는 똑같이 둡니다(둘이 나란히 있을 때 들쭉날쭉하지 않게). */
+        .ext-link.paystub {{
+          margin-left: 8px;
+          font-size: 12px;
+          vertical-align: middle;
+          white-space: nowrap;
+          color: #1c7a4b !important;
+          border-color: rgba(28, 122, 75, 0.35);
+          background: rgba(28, 122, 75, 0.07);
+        }}
+        .ext-link.paystub:hover {{ background: rgba(28, 122, 75, 0.14); }}
+
+        /* 자매 서비스 두 칩(ETF INSIDE · 급여명세서) 묶음. 문구가 길어 좁은 화면에서는
+           제목 줄에 다 못 들어가는데, 묶어서 nowrap 을 걸면 둘이 함께 다음 줄로
+           내려가 나란히 붙어 있습니다. 하나만 떨어져 나가면 짝이 안 보입니다. */
+        .sister-links {{ white-space: nowrap; display: inline-block; }}
+
+        /* 다만 휴대폰 화면에서는 둘을 묶어두면 폭을 넘겨서 오른쪽 칩이 화면 밖으로
+           잘려 나갑니다(눌러볼 수조차 없게 됩니다). 좁아지면 묶음을 풀어서
+           한 줄에 하나씩 내려오게 합니다. */
+        @media (max-width: 640px) {{
+          .sister-links {{ white-space: normal; }}
+          .ext-link.inside, .ext-link.paystub {{ margin-left: 0; margin-top: 4px; }}
+        }}
+
         /* 좁은 칸(종목 검색 쪽)용. 제목 오른쪽에 그대로 붙이면 글자가 잘리므로
            바로 아래 한 줄짜리 버튼으로 눕힙니다. 글자는 똑같습니다. */
         .ext-link.inside.block {{
