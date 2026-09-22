@@ -56,6 +56,18 @@ def test_label_and_url_come_from_config(market):
     assert "BETA" in config.INSIDE_LABEL
 
 
+def test_chips_have_no_leftover_underline(market):
+    """칩은 테두리로 감싼 버튼 모양입니다. 밑줄이 남으면 옛날 링크처럼 보입니다.
+    Streamlit 기본 스타일이 markdown 안의 <a> 에 더 강한 우선순위로 밑줄을 긋기
+    때문에, none 만으로는 꺼지지 않고 !important 가 있어야 합니다(화면에서 확인)."""
+    import inspect
+
+    import ui_theme
+
+    css = inspect.getsource(ui_theme.inject)
+    assert "text-decoration: none !important;" in css
+
+
 def test_opens_in_a_new_tab_safely(market):
     at = _run(market)
     for block in _inside_blocks(at):

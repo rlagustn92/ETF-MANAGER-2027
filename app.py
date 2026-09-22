@@ -1496,6 +1496,13 @@ if P.securities:
 # =====================================================================
 # 포트폴리오 요약 (상세, 인수인계서 31, 82, 108)
 # =====================================================================
+# 여기까지 내려왔다면 포트폴리오를 다 짠 사람입니다. "그래서 매달 언제 얼마가
+# 들어오나" 를 보러 갈 자리가 바로 여기라서, 요약 제목 바로 위에 크게 답니다.
+st.markdown(
+    f"<a class='paystub-cta' target='_blank' rel='noopener noreferrer' "
+    f"href='{config.PAYSTUB_URL}'>{config.PAYSTUB_LABEL} ↗</a>",
+    unsafe_allow_html=True,
+)
 st.markdown("### 포트폴리오 요약 (상세)")
 s1, s2, s3 = st.columns(3)
 s1.metric("내 시드", won(comp.initial_capital_krw))

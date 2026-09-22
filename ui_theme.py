@@ -132,16 +132,30 @@ def inject() -> None:
         }}
         .stat-strip .v.neg {{ color: #cf3742; }}
 
-        /* 종목명 옆 외부 링크(야후 파이낸스) */
+        /* 바로가기 칩 공통(종목명 옆 야후·토스·네이버, 제목 옆 피드백/자매 서비스).
+           아래 .paystub-cta 와 같은 톤으로 맞춥니다: 밑줄 대신 둥근 테두리,
+           위에서 아래로 옅어지는 바탕 한 겹, 올리면 1px 떠오르는 정도의 반응.
+           밑줄은 Streamlit 기본 스타일이 더 강한 우선순위로 긋기 때문에
+           !important 가 있어야 실제로 꺼집니다(화면에서 확인). */
         .ext-link {{
           display: inline-block;
-          font-size: 12px; font-weight: 600; text-decoration: none;
+          font-size: 12px; font-weight: 600;
+          text-decoration: none !important;
           color: var(--ink-secondary) !important;
           border: 1px solid var(--ink-hairline);
-          border-radius: 6px; padding: 1px 6px; margin-left: 2px;
-          background: rgba(15, 42, 68, 0.04);
+          border-radius: 7px; padding: 2px 7px; margin-left: 2px;
+          background: linear-gradient(180deg, rgba(15, 42, 68, 0.055), rgba(15, 42, 68, 0.02));
+          box-shadow: 0 1px 1px rgba(15, 42, 68, 0.04);
+          transition: border-color .16s ease, background .16s ease,
+                      box-shadow .16s ease, transform .16s ease;
         }}
-        .ext-link:hover {{ background: rgba(15, 42, 68, 0.10); }}
+        .ext-link:hover {{
+          border-color: rgba(15, 42, 68, 0.22);
+          background: linear-gradient(180deg, rgba(15, 42, 68, 0.10), rgba(15, 42, 68, 0.05));
+          box-shadow: 0 3px 8px rgba(15, 42, 68, 0.10);
+          transform: translateY(-1px);
+        }}
+        .ext-link:active {{ transform: translateY(0); box-shadow: 0 1px 1px rgba(15, 42, 68, 0.05); }}
 
         /* 종목 상세의 바로가기 칩 묶음(토스·야후·네이버).
            셋이 되면서 좁은 칸에서 마지막 하나만 다음 줄로 떨어지는 일이 생겼습니다.
@@ -167,10 +181,14 @@ def inject() -> None:
           vertical-align: middle;
           white-space: nowrap;
           color: #1a5fb4 !important;
-          border-color: rgba(26, 95, 180, 0.35);
-          background: rgba(26, 95, 180, 0.07);
+          border-color: rgba(26, 95, 180, 0.26);
+          background: linear-gradient(180deg, rgba(26, 95, 180, 0.075), rgba(26, 95, 180, 0.028));
         }}
-        .ext-link.inside:hover {{ background: rgba(26, 95, 180, 0.14); }}
+        .ext-link.inside:hover {{
+          border-color: rgba(26, 95, 180, 0.48);
+          background: linear-gradient(180deg, rgba(26, 95, 180, 0.13), rgba(26, 95, 180, 0.06));
+          box-shadow: 0 3px 10px rgba(26, 95, 180, 0.16);
+        }}
 
         /* 자매 서비스(MY ETF 급여명세서) 바로가기. 바로 왼쪽의 ETF INSIDE 와
            서로 다른 곳이라는 게 한눈에 보여야 해서 색만 옅은 초록으로 바꿉니다.
@@ -180,16 +198,57 @@ def inject() -> None:
           font-size: 12px;
           vertical-align: middle;
           white-space: nowrap;
-          color: #1c7a4b !important;
-          border-color: rgba(28, 122, 75, 0.35);
-          background: rgba(28, 122, 75, 0.07);
+          color: #146b43 !important;
+          border-color: rgba(28, 122, 75, 0.26);
+          background: linear-gradient(180deg, rgba(28, 122, 75, 0.075), rgba(28, 122, 75, 0.028));
         }}
-        .ext-link.paystub:hover {{ background: rgba(28, 122, 75, 0.14); }}
+        .ext-link.paystub:hover {{
+          border-color: rgba(28, 122, 75, 0.48);
+          background: linear-gradient(180deg, rgba(28, 122, 75, 0.13), rgba(28, 122, 75, 0.06));
+          box-shadow: 0 3px 10px rgba(28, 122, 75, 0.16);
+        }}
 
         /* 자매 서비스 두 칩(ETF INSIDE · 급여명세서) 묶음. 문구가 길어 좁은 화면에서는
            제목 줄에 다 못 들어가는데, 묶어서 nowrap 을 걸면 둘이 함께 다음 줄로
            내려가 나란히 붙어 있습니다. 하나만 떨어져 나가면 짝이 안 보입니다. */
         .sister-links {{ white-space: nowrap; display: inline-block; }}
+
+        /* '포트폴리오 요약 (상세)' 바로 위에 붙는 급여명세서 바로가기.
+           여기까지 내려온 사람은 포트폴리오를 다 짠 사람이라, 다음에 눌러야 할 곳이
+           한눈에 보여야 합니다. 그래서 그냥 글자 링크가 아니라 **눌리는 것처럼 생긴
+           카드**로 만듭니다: 둥근 테두리 + 아주 옅은 초록 바탕 + 얕은 그림자.
+           색은 한 겹만 옅게 씁니다 -- 화면의 주인공은 여전히 전술판과 요약 숫자라서,
+           여기가 원색으로 튀면 촌스러워집니다. */
+        .paystub-cta {{
+          display: inline-block;
+          max-width: 100%;
+          margin: 14px 0 6px;
+          padding: 11px 18px;
+          font-size: 16.5px; font-weight: 700; line-height: 1.4;
+          letter-spacing: -0.2px;
+          color: #146b43 !important;
+          /* Streamlit 기본 스타일이 markdown 안의 <a> 에 밑줄을 더 강한 우선순위로
+             긋습니다. 버튼처럼 생긴 카드에 밑줄이 남으면 촌스러워서 !important
+             로 끕니다(그냥 none 만 쓰면 Streamlit 쪽이 이깁니다 -- 화면에서 확인). */
+          text-decoration: none !important;
+          border: 1px solid rgba(28, 122, 75, 0.26);
+          border-radius: 12px;
+          background:
+            linear-gradient(180deg, rgba(28, 122, 75, 0.075), rgba(28, 122, 75, 0.028));
+          box-shadow: 0 1px 2px rgba(15, 42, 68, 0.05);
+          transition: border-color .16s ease, background .16s ease,
+                      box-shadow .16s ease, transform .16s ease;
+        }}
+        /* 마우스를 올리면 살짝 떠오릅니다. "눌러도 되는 것" 이라는 신호를
+           글자 색을 더 진하게 하는 것보다 얌전하게 줍니다. */
+        .paystub-cta:hover {{
+          border-color: rgba(28, 122, 75, 0.48);
+          background:
+            linear-gradient(180deg, rgba(28, 122, 75, 0.13), rgba(28, 122, 75, 0.06));
+          box-shadow: 0 4px 12px rgba(28, 122, 75, 0.16);
+          transform: translateY(-1px);
+        }}
+        .paystub-cta:active {{ transform: translateY(0); box-shadow: 0 1px 2px rgba(15, 42, 68, 0.06); }}
 
         /* 다만 휴대폰 화면에서는 둘을 묶어두면 폭을 넘겨서 오른쪽 칩이 화면 밖으로
            잘려 나갑니다(눌러볼 수조차 없게 됩니다). 좁아지면 묶음을 풀어서
@@ -204,7 +263,8 @@ def inject() -> None:
         .ext-link.inside.block {{
           display: block;
           margin: 2px 0 10px;
-          padding: 7px 8px;
+          padding: 9px 10px;
+          border-radius: 10px;
           text-align: center;
           white-space: normal;
           font-size: 12.5px;
